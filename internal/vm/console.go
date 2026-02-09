@@ -3,11 +3,13 @@
 package vm
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"sync"
 
 	"github.com/Code-Hex/vz/v3"
+	"golang.org/x/term"
 )
 
 // Console manages VM serial console I/O
@@ -64,24 +66,45 @@ func createConsole() (*Console, *vz.VirtioConsoleDeviceSerialPortConfiguration, 
 	return console, serialConfig, nil
 }
 
-// Attach connects stdin/stdout to the console
+// Attach connects stdin/stdout to the console with proper terminal handling
 func (c *Console) Attach(stdin io.Reader, stdout io.Writer) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Copy from console to stdout
+	// Check if stdin is a terminal and set raw mode
+	stdinFd := int(os.Stdin.Fd())
+	if term.IsTerminal(stdinFd) {
+		// Save current terminal state and set raw mode
+		oldState, err := term.MakeRaw(stdinFd)
+		if err != nil {
+			return fmt.Errorf("failed to set raw mode: %w", err)
+		}
+		// Restore terminal on exit
+		defer term.Restore(stdinFd, oldState)
+	}
+
+	// Create error channel to capture copy errors
+	errCh := make(chan error, 2)
+
+	// Copy from console to stdout (VM -> host)
 	go func() {
-		io.Copy(stdout, c.read)
+		_, err := io.Copy(stdout, c.read)
+		errCh <- err
 	}()
 
-	// Copy from stdin to console
+	// Copy from stdin to console (host -> VM)
 	go func() {
-		io.Copy(c.write, stdin)
+		_, err := io.Copy(c.write, stdin)
+		errCh <- err
 	}()
 
-	// Wait for done signal
-	<-c.done
-	return nil
+	// Wait for done signal or error
+	select {
+	case <-c.done:
+		return nil
+	case err := <-errCh:
+		return err
+	}
 }
 
 // Detach disconnects the console
