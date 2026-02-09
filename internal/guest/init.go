@@ -1,0 +1,228 @@
+package guest
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/faize-ai/faize/internal/session"
+)
+
+// GenerateInitScript generates the bootstrap init script executed by the rootfs /init.
+// This script is written to /mnt/bootstrap/init.sh and called after the rootfs /init
+// has already mounted proc/sys/dev and the faize-bootstrap VirtioFS share.
+func GenerateInitScript(mounts []session.VMMount, workDir string) string {
+	var sb strings.Builder
+
+	sb.WriteString("#!/bin/sh\n")
+	sb.WriteString("# Faize bootstrap init script\n")
+	sb.WriteString("# Called by rootfs /init after mounting faize-bootstrap VirtioFS share\n")
+	sb.WriteString("set -e\n\n")
+
+	// Mount VirtioFS shares (proc/sys/dev already mounted by rootfs /init)
+	sb.WriteString("# Mount VirtioFS shares\n")
+	for i, mount := range mounts {
+		tag := mount.Tag
+		if tag == "" {
+			tag = fmt.Sprintf("mount%d", i)
+		}
+
+		// Create mount point
+		sb.WriteString(fmt.Sprintf("mkdir -p %s\n", mount.Target))
+
+		// Mount options
+		opts := "rw"
+		if mount.ReadOnly {
+			opts = "ro"
+		}
+
+		sb.WriteString(fmt.Sprintf("mount -t virtiofs %s %s -o %s\n", tag, mount.Target, opts))
+	}
+
+	sb.WriteString("\n")
+
+	// Set system time from host
+	sb.WriteString("# Set system time from host\n")
+	sb.WriteString("if [ -f /mnt/bootstrap/hosttime ]; then\n")
+	sb.WriteString("  HOSTTIME=$(cat /mnt/bootstrap/hosttime)\n")
+	sb.WriteString("  date -s \"@$HOSTTIME\" >/dev/null 2>&1 && echo \"Clock synced from host\" || echo \"Clock sync failed\"\n")
+	sb.WriteString("fi\n\n")
+
+	// Change to working directory
+	if workDir != "" {
+		sb.WriteString(fmt.Sprintf("# Change to project directory\n"))
+		sb.WriteString(fmt.Sprintf("cd %s\n\n", workDir))
+	}
+
+	// Start shell
+	sb.WriteString("# Start interactive shell\n")
+	sb.WriteString("exec setsid /bin/sh </dev/console >/dev/console 2>&1\n")
+
+	return sb.String()
+}
+
+// GenerateRCLocal generates /etc/rc.local content for Alpine
+func GenerateRCLocal(mounts []session.VMMount) string {
+	var sb strings.Builder
+
+	sb.WriteString("#!/bin/sh\n")
+	sb.WriteString("# Faize rc.local - mount VirtioFS shares at boot\n\n")
+
+	for i, mount := range mounts {
+		tag := mount.Tag
+		if tag == "" {
+			tag = fmt.Sprintf("mount%d", i)
+		}
+
+		sb.WriteString(fmt.Sprintf("mkdir -p %s\n", mount.Target))
+
+		opts := "rw"
+		if mount.ReadOnly {
+			opts = "ro"
+		}
+
+		sb.WriteString(fmt.Sprintf("mount -t virtiofs %s %s -o %s || true\n", tag, mount.Target, opts))
+	}
+
+	sb.WriteString("\nexit 0\n")
+
+	return sb.String()
+}
+
+// GenerateClaudeInitScript generates the bootstrap init script for Claude mode.
+// This script mounts VirtioFS shares, sets up Claude configuration, and launches Claude Code CLI.
+// Bun and Claude are pre-installed in the rootfs at /usr/local/bin.
+func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string) string {
+	var sb strings.Builder
+
+	sb.WriteString("#!/bin/sh\n")
+	sb.WriteString("# Faize Claude mode init script (non-root)\n")
+	sb.WriteString("set -e\n\n")
+
+	// Mount VirtioFS shares
+	sb.WriteString("# Mount VirtioFS shares\n")
+	for i, mount := range mounts {
+		tag := mount.Tag
+		if tag == "" {
+			tag = fmt.Sprintf("mount%d", i)
+		}
+		sb.WriteString(fmt.Sprintf("mkdir -p %s\n", mount.Target))
+		opts := "rw"
+		if mount.ReadOnly {
+			opts = "ro"
+		}
+		sb.WriteString(fmt.Sprintf("mount -t virtiofs %s %s -o %s\n", tag, mount.Target, opts))
+	}
+	sb.WriteString("\n")
+
+	// Set system time from host
+	sb.WriteString("# Set system time from host\n")
+	sb.WriteString("if [ -f /mnt/bootstrap/hosttime ]; then\n")
+	sb.WriteString("  HOSTTIME=$(cat /mnt/bootstrap/hosttime)\n")
+	sb.WriteString("  date -s \"@$HOSTTIME\" >/dev/null 2>&1 && echo \"Clock synced from host\" || echo \"Clock sync failed\"\n")
+	sb.WriteString("fi\n\n")
+
+	// Configure network via DHCP
+	sb.WriteString("# Configure network\n")
+	sb.WriteString("echo 'Setting up network...'\n")
+
+	// Bring up loopback
+	sb.WriteString("ifconfig lo 127.0.0.1 up\n")
+
+	// Find and bring up the network interface
+	sb.WriteString("IFACE=$(ls /sys/class/net | grep -v lo | head -1)\n")
+	sb.WriteString("if [ -n \"$IFACE\" ]; then\n")
+	sb.WriteString("  echo \"Found interface: $IFACE\"\n")
+	sb.WriteString("  ifconfig $IFACE up\n")
+	sb.WriteString("  \n")
+	sb.WriteString("  # Run DHCP client (busybox udhcpc)\n")
+	sb.WriteString("  echo 'Running DHCP...'\n")
+	sb.WriteString("  udhcpc -i $IFACE -n -q -t 10 2>/dev/null && echo 'DHCP successful' || echo 'DHCP failed'\n")
+	sb.WriteString("  \n")
+	sb.WriteString("  # Show assigned IP\n")
+	sb.WriteString("  ifconfig $IFACE | grep 'inet addr' || ifconfig $IFACE | grep 'inet '\n")
+	sb.WriteString("fi\n\n")
+
+	// Ensure DNS is configured (DHCP may or may not set this)
+	sb.WriteString("# Ensure DNS configuration\n")
+	sb.WriteString("grep -q nameserver /etc/resolv.conf 2>/dev/null || echo 'nameserver 8.8.8.8' > /etc/resolv.conf\n")
+	sb.WriteString("grep -q '8.8.8.8\\|1.1.1.1' /etc/resolv.conf || {\n")
+	sb.WriteString("  echo 'nameserver 8.8.8.8' > /etc/resolv.conf\n")
+	sb.WriteString("  echo 'nameserver 1.1.1.1' >> /etc/resolv.conf\n")
+	sb.WriteString("}\n\n")
+
+	// Test connectivity
+	sb.WriteString("# Test network connectivity\n")
+	sb.WriteString("echo 'Testing connectivity...'\n")
+	sb.WriteString("wget -q --spider http://api.anthropic.com 2>/dev/null && echo 'Network OK' || echo 'Network check failed (may still work)'\n\n")
+
+	// Fix ownership for writable directories
+	sb.WriteString("# Fix ownership for claude user\n")
+	sb.WriteString("chown -R claude:claude /home/claude 2>/dev/null || true\n")
+	sb.WriteString("chown -R claude:claude /opt/toolchain 2>/dev/null || true\n")
+	if projectDir != "" {
+		sb.WriteString(fmt.Sprintf("chown -R claude:claude %s 2>/dev/null || true\n", projectDir))
+	}
+	sb.WriteString("\n")
+
+	// Create Claude config directory
+	sb.WriteString("# Create Claude configuration directory\n")
+	sb.WriteString("mkdir -p /home/claude/.claude\n")
+	sb.WriteString("chown claude:claude /home/claude/.claude\n\n")
+
+	// Symlink read-only configuration files
+	sb.WriteString("# Symlink read-only Claude configuration files\n")
+	readOnlyFiles := []string{"CLAUDE.md", "keybindings.json"}
+	for _, file := range readOnlyFiles {
+		sb.WriteString(fmt.Sprintf("if [ -e /mnt/host-claude/%s ]; then\n", file))
+		sb.WriteString(fmt.Sprintf("  ln -sf /mnt/host-claude/%s /home/claude/.claude/%s\n", file, file))
+		sb.WriteString("fi\n")
+	}
+	sb.WriteString("\n")
+
+	// Copy settings.json (Claude may need to modify it) - only if not already present
+	sb.WriteString("# Copy settings.json (may need modifications) - only if not already present\n")
+	sb.WriteString("if [ -f /mnt/host-claude/settings.json ] && [ ! -e /home/claude/.claude/settings.json ]; then\n")
+	sb.WriteString("  cp /mnt/host-claude/settings.json /home/claude/.claude/settings.json\n")
+	sb.WriteString("  chown claude:claude /home/claude/.claude/settings.json\n")
+	sb.WriteString("fi\n\n")
+
+	// Create writable directories and copy contents from host
+	sb.WriteString("# Create writable directories with host content\n")
+	writableDirs := []string{"skills", "plugins"}
+	for _, dir := range writableDirs {
+		sb.WriteString(fmt.Sprintf("mkdir -p /home/claude/.claude/%s\n", dir))
+		sb.WriteString(fmt.Sprintf("if [ -d /mnt/host-claude/%s ]; then\n", dir))
+		sb.WriteString(fmt.Sprintf("  cp -r /mnt/host-claude/%s/. /home/claude/.claude/%s/ 2>/dev/null || true\n", dir, dir))
+		sb.WriteString("fi\n")
+		sb.WriteString(fmt.Sprintf("chown -R claude:claude /home/claude/.claude/%s\n", dir))
+	}
+	sb.WriteString("\n")
+
+	// Change to project directory
+	if projectDir != "" {
+		sb.WriteString(fmt.Sprintf("cd %s\n\n", projectDir))
+	} else {
+		sb.WriteString("cd /workspace\n\n")
+	}
+
+	// Launch Claude CLI as non-root user
+	sb.WriteString("# Launch Claude CLI as non-root user\n")
+	sb.WriteString("exec su -s /bin/sh claude -c 'export HOME=/home/claude && export PATH=/usr/local/bin:/usr/bin:/bin && claude --dangerously-skip-permissions'\n")
+
+	return sb.String()
+}
+
+// DefaultShellRC returns default shell RC content
+func DefaultShellRC(workDir string) string {
+	var sb strings.Builder
+
+	sb.WriteString("# Faize shell configuration\n")
+	sb.WriteString("export PS1='faize:\\w\\$ '\n")
+	sb.WriteString("export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\n")
+
+	if workDir != "" {
+		sb.WriteString(fmt.Sprintf("cd %s 2>/dev/null || true\n", workDir))
+	}
+
+	return sb.String()
+}

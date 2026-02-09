@@ -1,0 +1,7 @@
+.omc
+*.plist
+faize*
+*.txt
+vmlinux
+main
+kernel*
