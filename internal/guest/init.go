@@ -98,6 +98,20 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string) strin
 	sb.WriteString("# Faize Claude mode init script (non-root)\n")
 	sb.WriteString("set -e\n\n")
 
+	// Add signal handler for graceful shutdown
+	sb.WriteString("# Signal handler for graceful shutdown\n")
+	sb.WriteString("cleanup() {\n")
+	sb.WriteString("  echo 'Shutting down...'\n")
+	sb.WriteString("  # Kill child processes gracefully\n")
+	sb.WriteString("  kill -TERM $(jobs -p) 2>/dev/null || true\n")
+	sb.WriteString("  wait\n")
+	sb.WriteString("  # Sync filesystems\n")
+	sb.WriteString("  sync\n")
+	sb.WriteString("  # Power off\n")
+	sb.WriteString("  poweroff -f\n")
+	sb.WriteString("}\n\n")
+	sb.WriteString("trap cleanup TERM INT\n\n")
+
 	// Mount VirtioFS shares
 	sb.WriteString("# Mount VirtioFS shares\n")
 	for i, mount := range mounts {
@@ -205,9 +219,14 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string) strin
 		sb.WriteString("cd /workspace\n\n")
 	}
 
-	// Launch Claude CLI as non-root user
-	sb.WriteString("# Launch Claude CLI as non-root user\n")
-	sb.WriteString("exec su -s /bin/sh claude -c 'export HOME=/home/claude && export PATH=/usr/local/bin:/usr/bin:/bin && claude --dangerously-skip-permissions'\n")
+	// Launch Claude CLI as non-root user (as child process, NOT exec)
+	sb.WriteString("# Launch Claude CLI as non-root user (as child process, NOT exec)\n")
+	sb.WriteString("su -s /bin/sh claude -c 'export HOME=/home/claude && export PATH=/usr/local/bin:/usr/bin:/bin && claude --dangerously-skip-permissions' &\n")
+	sb.WriteString("CLAUDE_PID=$!\n\n")
+	sb.WriteString("# Wait for claude to exit\n")
+	sb.WriteString("wait $CLAUDE_PID\n\n")
+	sb.WriteString("# After claude exits, shutdown gracefully\n")
+	sb.WriteString("cleanup\n")
 
 	return sb.String()
 }

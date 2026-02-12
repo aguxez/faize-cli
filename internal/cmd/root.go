@@ -68,8 +68,6 @@ func init() {
 	rootCmd.Flags().StringVar(&memory, "memory", "", "memory limit (e.g., 4GB)")
 	rootCmd.Flags().StringVarP(&timeout, "timeout", "t", "", "session timeout (e.g., 2h)")
 	rootCmd.Flags().BoolVar(&minimalTest, "minimal-test", false, "minimal test mode: 1 CPU, 512MB RAM, no mounts, no network")
-
-	rootCmd.AddCommand(claudeCmd)
 }
 
 func initConfig() {
