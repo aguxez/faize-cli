@@ -358,6 +358,7 @@ func (m *VZManager) Create(cfg *Config) (*session.Session, error) {
 		Memory:     cfg.Memory,
 		Status:     "created",
 		StartedAt:  time.Now(),
+		ClaudeMode: cfg.ClaudeMode,
 	}
 
 	// Store VM and console
@@ -392,7 +393,13 @@ func (m *VZManager) Start(sess *session.Session) error {
 	if err := validateKernelFile(m.artifacts.KernelPath()); err != nil {
 		return fmt.Errorf("kernel validation failed: %w", err)
 	}
-	if err := validateRootfs(m.artifacts.RootfsPath()); err != nil {
+
+	// Validate the correct rootfs based on mode
+	rootfsToValidate := m.artifacts.RootfsPath()
+	if sess.ClaudeMode {
+		rootfsToValidate = m.artifacts.ClaudeRootfsPath()
+	}
+	if err := validateRootfs(rootfsToValidate); err != nil {
 		return fmt.Errorf("rootfs validation failed: %w", err)
 	}
 

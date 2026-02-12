@@ -128,6 +128,11 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string) strin
 	}
 	sb.WriteString("\n")
 
+	// Mount devpts for PTY support (required by script command)
+	sb.WriteString("# Mount devpts for PTY support\n")
+	sb.WriteString("mkdir -p /dev/pts\n")
+	sb.WriteString("mount -t devpts devpts /dev/pts -o gid=5,mode=620\n\n")
+
 	// Set system time from host
 	sb.WriteString("# Set system time from host\n")
 	sb.WriteString("if [ -f /mnt/bootstrap/hosttime ]; then\n")
@@ -219,13 +224,17 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string) strin
 		sb.WriteString("cd /workspace\n\n")
 	}
 
-	// Launch Claude CLI as non-root user (as child process, NOT exec)
-	sb.WriteString("# Launch Claude CLI as non-root user (as child process, NOT exec)\n")
-	sb.WriteString("su -s /bin/sh claude -c 'export HOME=/home/claude && export PATH=/usr/local/bin:/usr/bin:/bin && claude --dangerously-skip-permissions' &\n")
-	sb.WriteString("CLAUDE_PID=$!\n\n")
-	sb.WriteString("# Wait for claude to exit\n")
-	sb.WriteString("wait $CLAUDE_PID\n\n")
-	sb.WriteString("# After claude exits, shutdown gracefully\n")
+	// Launch Claude CLI as non-root user with PTY allocation via script command
+	// The script command allocates a PTY which Claude/Ink requires for raw mode
+	sb.WriteString("# Launch Claude CLI as non-root user with PTY allocation via script command\n")
+	sb.WriteString("# The script command allocates a PTY which Claude/Ink requires for raw mode\n")
+	sb.WriteString("# Disable exit-on-error for the script command to prevent kernel panic if it fails\n")
+	sb.WriteString("set +e\n")
+	sb.WriteString("script -q -c \"su -s /bin/sh claude -c 'export HOME=/home/claude && export PATH=/usr/local/bin:/usr/bin:/bin && cd \\${PWD} && exec claude'\" /dev/null\n")
+	sb.WriteString("CLAUDE_EXIT=$?\n")
+	sb.WriteString("set -e\n\n")
+	sb.WriteString("echo \"Claude exited with code: $CLAUDE_EXIT\"\n\n")
+	sb.WriteString("# Shutdown gracefully\n")
 	sb.WriteString("cleanup\n")
 
 	return sb.String()
