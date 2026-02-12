@@ -20,9 +20,8 @@ const (
 	// Version is the artifact version to download
 	Version = "v0.1.0"
 
-	// PuiPuiKernelURL is a known-working kernel for Apple Virtualization.framework
-	// From: https://github.com/Code-Hex/puipui-linux (tested with vz library)
-	PuiPuiKernelURL = "https://github.com/Code-Hex/puipui-linux/releases/download/v1.0.3/puipui_linux_v1.0.3_aarch64.tar.gz"
+	// Fallback kernel: build from source using scripts/build-kernel.sh when primary download fails
+	// The custom kernel has virtio support required for Apple Virtualization.framework
 )
 
 // Manager handles artifact download and storage at ~/.faize/artifacts/
@@ -96,19 +95,11 @@ func (m *Manager) ensureKernel() error {
 		return nil
 	}
 
-	// Fallback to puipui-linux kernel (known-working with Apple VZ)
-	fmt.Printf("Primary kernel unavailable, trying puipui-linux kernel...\n")
-	tarGzPath := path + ".tar.gz"
-	if err := m.download(PuiPuiKernelURL, tarGzPath, "puipui-linux kernel"); err != nil {
-		return fmt.Errorf("failed to download kernel from any source: %w", err)
+	// Fallback: build kernel from source with virtio support
+	fmt.Printf("Primary kernel unavailable, building from source...\n")
+	if err := m.buildKernel(path); err != nil {
+		return fmt.Errorf("failed to get kernel from any source: %w", err)
 	}
-
-	// Extract the kernel from tar.gz (looking for "Image" file)
-	if err := m.extractKernelFromTarGz(tarGzPath, path); err != nil {
-		os.Remove(tarGzPath)
-		return fmt.Errorf("failed to extract kernel: %w", err)
-	}
-	os.Remove(tarGzPath)
 
 	return nil
 }
@@ -204,7 +195,68 @@ func (m *Manager) decompressGzip(src, dst string) error {
 	return err
 }
 
+// buildKernel builds the kernel using scripts/build-kernel.sh
+// This produces an uncompressed ARM64 Image that Apple Virtualization.framework requires
+func (m *Manager) buildKernel(destPath string) error {
+	scriptPath, err := m.findKernelBuildScript()
+	if err != nil {
+		return fmt.Errorf("failed to find build-kernel.sh: %w", err)
+	}
+
+	fmt.Printf("Building kernel with virtio support (this may take 5-10 minutes on first run)...\n")
+	fmt.Printf("Using build script: %s\n", scriptPath)
+
+	// build-kernel.sh <version> <workdir> <output>
+	// Use empty string for workdir to let the script use a temp directory
+	cmd := exec.Command("bash", scriptPath, "6.6.10", "", destPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to build kernel: %w", err)
+	}
+
+	// Verify the kernel was built
+	if info, err := os.Stat(destPath); err == nil {
+		fmt.Printf("Kernel built successfully (%d bytes)\n", info.Size())
+	}
+
+	return nil
+}
+
+// findKernelBuildScript locates the build-kernel.sh script
+// Looks in ../scripts/ relative to the binary, or scripts/ relative to repo root
+func (m *Manager) findKernelBuildScript() (string, error) {
+	// Try relative to binary (for installed/distributed binaries)
+	execPath, err := os.Executable()
+	if err == nil {
+		scriptPath := filepath.Join(filepath.Dir(execPath), "..", "scripts", "build-kernel.sh")
+		if _, err := os.Stat(scriptPath); err == nil {
+			return scriptPath, nil
+		}
+	}
+
+	// Try relative to repo root (for development)
+	wd, err := os.Getwd()
+	if err == nil {
+		// Try from current working directory
+		scriptPath := filepath.Join(wd, "cli", "scripts", "build-kernel.sh")
+		if _, err := os.Stat(scriptPath); err == nil {
+			return scriptPath, nil
+		}
+
+		// Try going up from working directory to find scripts
+		scriptPath = filepath.Join(wd, "scripts", "build-kernel.sh")
+		if _, err := os.Stat(scriptPath); err == nil {
+			return scriptPath, nil
+		}
+	}
+
+	return "", fmt.Errorf("build-kernel.sh not found in expected locations")
+}
+
 // extractKernelFromTarGz extracts the kernel "Image.gz" file from a tar.gz archive and decompresses it
+// Deprecated: Kept for backwards compatibility but no longer used (puipui-linux replaced with Alpine)
 func (m *Manager) extractKernelFromTarGz(src, dst string) error {
 	srcFile, err := os.Open(src)
 	if err != nil {
@@ -310,8 +362,13 @@ func (m *Manager) ToolchainDir() string {
 	return filepath.Join(m.FaizeDir(), "toolchain")
 }
 
-// EnsureClaudeRootfs ensures claude-rootfs.img exists
+// EnsureClaudeRootfs ensures kernel and claude-rootfs.img exist
 func (m *Manager) EnsureClaudeRootfs() error {
+	// Ensure kernel exists (shared with regular rootfs)
+	if err := m.ensureKernel(); err != nil {
+		return fmt.Errorf("failed to ensure kernel: %w", err)
+	}
+
 	path := m.ClaudeRootfsPath()
 	if _, err := os.Stat(path); err == nil {
 		return nil // Already exists

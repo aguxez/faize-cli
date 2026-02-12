@@ -89,8 +89,10 @@ if [[ "$(uname)" == "Darwin" ]]; then
     echo "Output will be: $OUTPUT_ABS"
 
     # Run build inside Docker container (debian-slim is ~30MB vs ubuntu's ~78MB)
+    # Note: --ulimit nofile increases file descriptor limit to avoid "Too many open files" during parallel build
     docker run --rm \
         --platform linux/arm64 \
+        --ulimit nofile=65536:65536 \
         -v "${WORKDIR}:/build" \
         -v "${OUTPUT_DIR}:/output" \
         -v "${KERNEL_CONFIG}:/kernel-config:ro" \
@@ -126,7 +128,8 @@ echo "Configuring kernel..."
 make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
 
 echo "Building kernel (this may take a while)..."
-make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image
+# Use limited parallelism to avoid "Too many open files" in Docker on macOS
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j4 Image
 
 echo "Copying output..."
 cp arch/arm64/boot/Image "/output/${OUTPUT_NAME}"

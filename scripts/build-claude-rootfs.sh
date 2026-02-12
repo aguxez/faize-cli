@@ -29,7 +29,7 @@ mkdir -p "$WORK_DIR/rootfs"/{bin,dev,etc,mnt/bootstrap,mnt/host-claude,opt/toolc
 echo "==> Installing packages from Alpine"
 docker run --rm -v "$WORK_DIR/rootfs:/out" alpine:latest sh -c '
     # Install packages
-    apk add --no-cache bash curl ca-certificates git build-base python3 coreutils nodejs npm >/dev/null 2>&1
+    apk add --no-cache bash curl ca-certificates git build-base python3 coreutils nodejs npm util-linux >/dev/null 2>&1
 
     # Copy the entire root filesystem structure
     for dir in bin lib usr sbin; do
@@ -112,32 +112,29 @@ export PATH=/opt/toolchain/bin:/usr/local/bin:$PATH
 ENVSH
 chmod +x "$WORK_DIR/rootfs/opt/toolchain/env.sh"
 
-# Create ext4 filesystem image
+# Create ext4 image INSIDE container, then extract with docker cp
+# This bypasses Docker Desktop's unreliable bind mount sync on macOS
 echo "==> Creating ext4 image (${ROOTFS_SIZE_MB}MB)"
-truncate -s ${ROOTFS_SIZE_MB}M "$WORK_DIR/rootfs.img"
-
-# Create a tar of the rootfs
-tar -C "$WORK_DIR/rootfs" -cf "$WORK_DIR/rootfs.tar" .
-
-# Format and populate using Docker
-echo "==> Formatting and populating rootfs"
-docker run --rm --privileged \
-    -v "$WORK_DIR:/work" \
+CONTAINER_ID=$(docker create \
+    -v "$WORK_DIR/rootfs:/work/rootfs:ro" \
     alpine:latest sh -c "
         apk add --no-cache e2fsprogs >/dev/null 2>&1
-        mkfs.ext4 -F -L faize-claude /work/rootfs.img >/dev/null
-        mkdir -p /mnt/rootfs
-        mount -o loop /work/rootfs.img /mnt/rootfs
-        tar -C /mnt/rootfs -xf /work/rootfs.tar
-        sync
-        umount /mnt/rootfs
-        sync
-        e2fsck -f -y /work/rootfs.img >/dev/null 2>&1 || true
-    "
+        mke2fs -t ext4 -d /work/rootfs -L faize-claude \
+            -E no_copy_xattrs -b 4096 /tmp/rootfs.img ${ROOTFS_SIZE_MB}M
+        e2fsck -f -y /tmp/rootfs.img >/dev/null 2>&1 || true
+    ")
 
-# Move to final location
-echo "==> Installing rootfs image"
-mv "$WORK_DIR/rootfs.img" "$OUTPUT_PATH"
+if ! docker start -a "$CONTAINER_ID"; then
+    echo "ERROR: Failed to create ext4 image inside container"
+    docker logs "$CONTAINER_ID" 2>&1 || true
+    docker rm "$CONTAINER_ID" >/dev/null 2>&1 || true
+    exit 1
+fi
+
+docker cp "$CONTAINER_ID:/tmp/rootfs.img" "$OUTPUT_PATH"
+docker rm "$CONTAINER_ID" >/dev/null 2>&1 || true
+
+echo "==> Rootfs image created at $OUTPUT_PATH"
 
 echo "==> Claude rootfs build complete!"
 echo "    Location: $OUTPUT_PATH"

@@ -20,4 +20,5 @@ type Session struct {
 	Memory     string    `json:"memory"`
 	Status     string    `json:"status"` // "created", "running", "stopped"
 	StartedAt  time.Time `json:"started_at"`
+	ClaudeMode bool      `json:"claude_mode"` // Whether using Claude rootfs
 }
