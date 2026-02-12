@@ -348,6 +348,24 @@ func (m *VZManager) Create(cfg *Config) (*session.Session, error) {
 	}
 	debugLog("Virtual machine created")
 
+	// Register VM state change handler to auto-detach console when VM stops
+	go func() {
+		for state := range vm.StateChangedNotify() {
+			debugLog("VM state changed: %v", state)
+			if state == vz.VirtualMachineStateStopped ||
+				state == vz.VirtualMachineStateError {
+				// Auto-detach console when VM stops to unblock Attach()
+				m.mu.RLock()
+				console := m.consoles[id]
+				m.mu.RUnlock()
+				if console != nil {
+					debugLog("Auto-detaching console due to VM state: %v", state)
+					console.Detach()
+				}
+			}
+		}
+	}()
+
 	// Create session
 	sess := &session.Session{
 		ID:         id,
