@@ -20,10 +20,11 @@ var ErrUserDetach = errors.New("user requested detach")
 
 // Console manages VM serial console I/O
 type Console struct {
-	read  *os.File
-	write *os.File
-	mu    sync.Mutex
-	done  chan struct{}
+	read   *os.File
+	write  *os.File
+	mu     sync.Mutex
+	done   chan struct{}
+	closed bool
 }
 
 // createConsole creates a console and its VZ serial port configuration
@@ -73,10 +74,10 @@ func createConsole() (*Console, *vz.VirtioConsoleDeviceSerialPortConfiguration, 
 }
 
 // Attach connects stdin/stdout to the console with proper terminal handling
+// NOTE: This method does NOT hold the mutex during the blocking select.
+// This allows Detach() to be called from another goroutine (e.g., VM state change handler)
+// to signal shutdown by closing c.done.
 func (c *Console) Attach(stdin io.Reader, stdout io.Writer) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	// Check if stdin is a terminal and set raw mode
 	stdinFd := int(os.Stdin.Fd())
 	if term.IsTerminal(stdinFd) {
@@ -125,6 +126,11 @@ func (c *Console) Attach(stdin io.Reader, stdout io.Writer) error {
 func (c *Console) Detach() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if c.closed {
+		return nil // Already detached
+	}
+	c.closed = true
 
 	close(c.done)
 	c.read.Close()
