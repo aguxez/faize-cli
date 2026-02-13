@@ -9,12 +9,16 @@ import (
 // ErrVMNotImplemented is returned when VM operations are called before Phase 2 implementation
 var ErrVMNotImplemented = errors.New("VM support not yet implemented - coming in Phase 2")
 
+// ErrUserDetach is returned when the user requests to detach from the console
+var ErrUserDetach = errors.New("user requested detach")
+
 type Manager interface {
 	Create(cfg *Config) (*session.Session, error)
 	Start(sess *session.Session) error
 	Stop(id string) error
 	List() ([]*session.Session, error)
 	Attach(id string) error
+	WaitForVMStop(id string) <-chan struct{}
 }
 
 type StubManager struct{}
@@ -41,4 +45,10 @@ func (m *StubManager) List() ([]*session.Session, error) {
 
 func (m *StubManager) Attach(id string) error {
 	return ErrVMNotImplemented
+}
+
+func (m *StubManager) WaitForVMStop(id string) <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch) // Immediately returns for stub
+	return ch
 }

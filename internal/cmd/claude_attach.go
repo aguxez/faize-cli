@@ -58,7 +58,7 @@ func runClaudeAttach(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("session %s not found", sessionID)
 	}
 
-	fmt.Printf("Attaching to session %s... (Ctrl+C to detach)\n", targetID)
+	fmt.Printf("Attaching to session %s... (~. to detach)\n", targetID)
 
 	err = manager.Attach(targetID)
 	if errors.Is(err, vm.ErrUserDetach) {

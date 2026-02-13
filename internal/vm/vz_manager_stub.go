@@ -40,3 +40,10 @@ func (m *VZManager) List() ([]*session.Session, error) {
 func (m *VZManager) Attach(id string) error {
 	return fmt.Errorf("VM support requires macOS")
 }
+
+// WaitForVMStop is not implemented on non-macOS
+func (m *VZManager) WaitForVMStop(id string) <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch) // Immediately returns for stub
+	return ch
+}
