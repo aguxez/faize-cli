@@ -15,6 +15,7 @@ import (
 	"github.com/faize-ai/faize/internal/guest"
 	"github.com/faize-ai/faize/internal/session"
 	"github.com/google/uuid"
+	"golang.org/x/term"
 )
 
 func debugLog(format string, args ...interface{}) {
@@ -185,6 +186,25 @@ func (m *VZManager) Create(cfg *Config) (*session.Session, error) {
 	hostTimePath := filepath.Join(bootstrapDir, "hosttime")
 	if err := os.WriteFile(hostTimePath, []byte(fmt.Sprintf("%d", hostTime)), 0644); err != nil {
 		return nil, fmt.Errorf("failed to write host time: %w", err)
+	}
+
+	// Write terminal size to bootstrap directory for guest terminal setup
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		width, height, err := term.GetSize(int(os.Stdout.Fd()))
+		if err == nil && width > 0 && height > 0 {
+			termSizePath := filepath.Join(bootstrapDir, "termsize")
+			if err := os.WriteFile(termSizePath, []byte(fmt.Sprintf("%d %d", width, height)), 0644); err != nil {
+				debugLog("Failed to write terminal size: %v", err)
+			}
+		}
+	}
+
+	// Write debug flag to bootstrap directory if debug mode is enabled
+	if os.Getenv("FAIZE_DEBUG") == "1" {
+		debugPath := filepath.Join(bootstrapDir, "debug")
+		if err := os.WriteFile(debugPath, []byte("1"), 0644); err != nil {
+			debugLog("Failed to write debug flag: %v", err)
+		}
 	}
 
 	// Create bootstrap mount and prepend to mounts list
