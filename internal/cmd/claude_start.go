@@ -171,6 +171,7 @@ func runClaudeStart(cmd *cobra.Command, args []string) error {
 		ProjectDir:    projectMount.Source,
 		Mounts:        parsedMounts,
 		Network:       claudeNetworks,
+		NetworkPolicy: policy,
 		CPUs:          startCPUs,
 		Memory:        startMemory,
 		Timeout:       timeoutDuration,

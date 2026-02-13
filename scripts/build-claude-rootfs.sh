@@ -25,11 +25,14 @@ mkdir -p "$(dirname "$OUTPUT_PATH")"
 echo "==> Creating directory structure"
 mkdir -p "$WORK_DIR/rootfs"/{bin,dev,etc,mnt/bootstrap,mnt/host-claude,opt/toolchain,proc,root,sys,tmp,workspace,usr/local/bin,usr/local/lib}
 
+# set permissions for tmp directory
+chmod 1777 "$WORK_DIR/rootfs/tmp"
+
 # Extract packages from Alpine using Docker
 echo "==> Installing packages from Alpine"
 docker run --rm -v "$WORK_DIR/rootfs:/out" alpine:latest sh -c '
     # Install packages
-    apk add --no-cache bash curl ca-certificates git build-base python3 coreutils nodejs npm util-linux >/dev/null 2>&1
+    apk add --no-cache bash curl ca-certificates git build-base python3 coreutils nodejs npm util-linux iptables ip6tables >/dev/null 2>&1
 
     # Copy the entire root filesystem structure
     for dir in bin lib usr sbin; do
