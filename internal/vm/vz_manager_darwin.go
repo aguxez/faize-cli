@@ -169,7 +169,7 @@ func (m *VZManager) Create(cfg *Config) (*session.Session, error) {
 	// Generate init script
 	var initScript string
 	if cfg.ClaudeMode {
-		initScript = guest.GenerateClaudeInitScript(cfg.Mounts, cfg.ProjectDir)
+		initScript = guest.GenerateClaudeInitScript(cfg.Mounts, cfg.ProjectDir, cfg.NetworkPolicy)
 	} else {
 		initScript = guest.GenerateInitScript(cfg.Mounts, cfg.ProjectDir)
 	}

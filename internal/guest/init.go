@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/faize-ai/faize/internal/network"
 	"github.com/faize-ai/faize/internal/session"
 )
 
@@ -91,7 +92,7 @@ func GenerateRCLocal(mounts []session.VMMount) string {
 // GenerateClaudeInitScript generates the bootstrap init script for Claude mode.
 // This script mounts VirtioFS shares, sets up Claude configuration, and launches Claude Code CLI.
 // Bun and Claude are pre-installed in the rootfs at /usr/local/bin.
-func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string) string {
+func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, policy *network.Policy) string {
 	var sb strings.Builder
 
 	sb.WriteString("#!/bin/sh\n")
@@ -173,6 +174,53 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string) strin
 	sb.WriteString("# Test network connectivity\n")
 	sb.WriteString("echo 'Testing connectivity...'\n")
 	sb.WriteString("wget -q --spider http://api.anthropic.com 2>/dev/null && echo 'Network OK' || echo 'Network check failed (may still work)'\n\n")
+
+	// Apply network policy if specified
+	if policy != nil && !policy.AllowAll {
+		if policy.Blocked {
+			// Block all outbound traffic (IPv4 only - IPv6 disabled in kernel)
+			sb.WriteString("# === Network Policy: BLOCKED ===\n")
+			sb.WriteString("echo 'Applying network policy: blocked'\n")
+			sb.WriteString("iptables -P OUTPUT DROP\n")
+			sb.WriteString("iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT\n")
+			sb.WriteString("iptables -A OUTPUT -o lo -j ACCEPT\n")
+			sb.WriteString("echo 'Network blocked (loopback only)'\n\n")
+		} else if len(policy.Domains) > 0 {
+			// Domain-based allowlist
+			sb.WriteString("# === Network Policy: Domain Allowlist ===\n")
+			sb.WriteString("echo 'Applying network policy: domain allowlist'\n\n")
+			sb.WriteString("# Default: drop all outbound except established connections\n")
+			sb.WriteString("iptables -P OUTPUT DROP\n")
+			sb.WriteString("iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT\n")
+			sb.WriteString("iptables -A OUTPUT -o lo -j ACCEPT\n\n")
+			sb.WriteString("# Allow DNS queries (required for resolution)\n")
+			sb.WriteString("iptables -A OUTPUT -p udp --dport 53 -j ACCEPT\n")
+			sb.WriteString("iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT\n\n")
+			sb.WriteString("# Resolve and allow specific domains\n")
+			domainsStr := strings.Join(policy.Domains, " ")
+			sb.WriteString(fmt.Sprintf("ALLOWED_DOMAINS=\"%s\"\n", domainsStr))
+			sb.WriteString("\n")
+			sb.WriteString("# Brief wait for DNS to stabilize after DHCP\n")
+			sb.WriteString("sleep 1\n\n")
+			sb.WriteString("for domain in $ALLOWED_DOMAINS; do\n")
+			sb.WriteString("  echo \"Resolving $domain...\"\n")
+			sb.WriteString("  # Use temp file to avoid subshell issues with pipe\n")
+			sb.WriteString("  nslookup \"$domain\" 2>/dev/null | awk 'NR>2 && /^Address:/ {print $2}' > /tmp/ips_$$ || true\n")
+			sb.WriteString("  while read ip; do\n")
+			sb.WriteString("    # Skip IPv6 addresses (kernel has IPv6 disabled)\n")
+			sb.WriteString("    if [ -n \"$ip\" ] && ! echo \"$ip\" | grep -q ':'; then\n")
+			sb.WriteString("      echo \"  Allowing $ip ($domain)\"\n")
+			sb.WriteString("      iptables -A OUTPUT -d \"$ip\" -j ACCEPT 2>/dev/null || echo \"  Failed to add rule for $ip\"\n")
+			sb.WriteString("    fi\n")
+			sb.WriteString("  done < /tmp/ips_$$\n")
+			sb.WriteString("  rm -f /tmp/ips_$$\n")
+			sb.WriteString("done\n\n")
+			sb.WriteString("# Show applied rules for debugging\n")
+			sb.WriteString("echo '=== iptables OUTPUT rules ==='\n")
+			sb.WriteString("iptables -L OUTPUT -n 2>/dev/null | head -20 || echo 'Failed to list iptables rules'\n\n")
+			sb.WriteString("echo 'Network policy applied'\n\n")
+		}
+	}
 
 	// Fix ownership for writable directories
 	sb.WriteString("# Fix ownership for claude user\n")
