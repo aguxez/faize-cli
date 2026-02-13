@@ -231,11 +231,17 @@ func runClaudeStart(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\nSession started: %s\n", sess.ID)
 
 	// Always attach to console after starting
-	fmt.Println("Attaching to console... (Ctrl+C to detach)")
+	fmt.Println("Attaching to console... (~. to detach)")
 	err = manager.Attach(sess.ID)
 	if errors.Is(err, vm.ErrUserDetach) {
 		fmt.Println("\nDetached from session")
 		fmt.Printf("Session %s still running. Reattach with: faize claude attach %s\n", sess.ID, sess.ID)
+
+		// Keep process alive - block until VM stops or signal received
+		// This keeps the console proxy server running so attach can reconnect
+		fmt.Println("(Process staying alive for reattach. Press Ctrl+C again to stop VM)")
+		<-manager.WaitForVMStop(sess.ID)
+		fmt.Printf("\nSession %s stopped.\n", sess.ID)
 		return nil
 	}
 	return err

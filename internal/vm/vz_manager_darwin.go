@@ -114,6 +114,7 @@ type VZManager struct {
 	artifacts *artifacts.Manager
 	vms       map[string]*vz.VirtualMachine
 	consoles  map[string]*Console
+	proxies   map[string]*ConsoleProxyServer
 	mu        sync.RWMutex
 }
 
@@ -134,6 +135,7 @@ func NewVZManager() (*VZManager, error) {
 		artifacts: artifactMgr,
 		vms:       make(map[string]*vz.VirtualMachine),
 		consoles:  make(map[string]*Console),
+		proxies:   make(map[string]*ConsoleProxyServer),
 	}, nil
 }
 
@@ -383,6 +385,20 @@ func (m *VZManager) Create(cfg *Config) (*session.Session, error) {
 	m.mu.Lock()
 	m.vms[id] = vm
 	m.consoles[id] = console
+
+	// Create and start console proxy server
+	proxy, err := NewConsoleProxyServer(id, console)
+	if err != nil {
+		debugLog("Failed to create console proxy: %v", err)
+	} else {
+		if err := proxy.Start(); err != nil {
+			debugLog("Failed to start console proxy: %v", err)
+		} else {
+			m.proxies[id] = proxy
+			debugLog("Console proxy started at %s", proxy.SocketPath())
+		}
+	}
+
 	m.mu.Unlock()
 
 	// Persist session
@@ -456,6 +472,13 @@ func (m *VZManager) Stop(id string) error {
 
 	delete(m.vms, id)
 	delete(m.consoles, id)
+
+	// Stop and remove proxy
+	if proxy, ok := m.proxies[id]; ok {
+		proxy.Stop()
+		delete(m.proxies, id)
+	}
+
 	m.mu.Unlock()
 
 	// Request stop
@@ -488,16 +511,73 @@ func (m *VZManager) List() ([]*session.Session, error) {
 }
 
 // Attach connects to the VM console
+// Always uses socket-based attach via proxy to ensure consistent behavior
+// between initial attach (faize claude start) and reattach (faize claude attach).
+// This prevents the bug where in-memory io.Copy goroutines would continue
+// consuming console output after detach, starving subsequent proxy clients.
 func (m *VZManager) Attach(id string) error {
-	m.mu.RLock()
-	console, ok := m.consoles[id]
-	m.mu.RUnlock()
+	socketPath := m.GetProxySocketPath(id)
 
-	if !ok {
-		return fmt.Errorf("console not found for session: %s", id)
+	// Wait briefly for proxy to be ready (relevant for fresh start)
+	for range 10 {
+		if _, err := os.Stat(socketPath); err == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 
-	return console.Attach(os.Stdin, os.Stdout)
+	if _, err := os.Stat(socketPath); err != nil {
+		return fmt.Errorf("console not found for session: %s (VM may have stopped)", id)
+	}
+
+	client, err := NewConsoleClient(socketPath)
+	if err != nil {
+		// Connection failed - socket is stale (process crashed)
+		// Clean up the orphaned socket file
+		os.Remove(socketPath)
+
+		// Update session status to stopped
+		if sess, loadErr := m.sessions.Load(id); loadErr == nil {
+			sess.Status = "stopped"
+			m.sessions.Save(sess)
+		}
+
+		return fmt.Errorf("session %s is no longer running (cleaned up stale socket)", id)
+	}
+	defer client.Close()
+	return client.Attach(os.Stdin, os.Stdout)
+}
+
+// GetProxySocketPath returns the socket path for a session's proxy
+func (m *VZManager) GetProxySocketPath(id string) string {
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".faize", "sessions", fmt.Sprintf("%s.sock", id))
+}
+
+// WaitForVMStop blocks until the VM stops or an error occurs
+func (m *VZManager) WaitForVMStop(id string) <-chan struct{} {
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		m.mu.RLock()
+		vm, ok := m.vms[id]
+		m.mu.RUnlock()
+
+		if !ok {
+			return
+		}
+
+		// Wait for VM to stop
+		for state := range vm.StateChangedNotify() {
+			if state == vz.VirtualMachineStateStopped || state == vz.VirtualMachineStateError {
+				return
+			}
+		}
+	}()
+
+	return done
 }
 
 // parseMemory converts memory string like "4GB" to bytes

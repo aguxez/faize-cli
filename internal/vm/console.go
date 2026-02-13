@@ -3,20 +3,14 @@
 package vm
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 
 	"github.com/Code-Hex/vz/v3"
 	"golang.org/x/term"
 )
-
-// ErrUserDetach is returned when the user requests to detach from the console
-var ErrUserDetach = errors.New("user requested detach")
 
 // Console manages VM serial console I/O
 type Console struct {
@@ -90,10 +84,8 @@ func (c *Console) Attach(stdin io.Reader, stdout io.Writer) error {
 		defer term.Restore(stdinFd, oldState)
 	}
 
-	// Signal channel for graceful exit
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(sigCh)
+	// Create EscapeWriter for detecting user escape sequences
+	escapeWriter := NewEscapeWriter(c.write, stdout)
 
 	// Create error channel to capture copy errors
 	errCh := make(chan error, 2)
@@ -104,21 +96,20 @@ func (c *Console) Attach(stdin io.Reader, stdout io.Writer) error {
 		errCh <- err
 	}()
 
-	// Copy from stdin to console (host -> VM)
+	// Copy from stdin to console (host -> VM) with escape detection
 	go func() {
-		_, err := io.Copy(c.write, stdin)
+		_, err := io.Copy(escapeWriter, stdin)
 		errCh <- err
 	}()
 
-	// Wait for done signal, error, or interrupt
+	// Wait for done signal, error, or user escape
 	select {
 	case <-c.done:
 		return nil
+	case <-escapeWriter.DetachChan():
+		return ErrUserDetach
 	case err := <-errCh:
 		return err
-	case <-sigCh:
-		// Return special error to indicate user requested detach
-		return ErrUserDetach
 	}
 }
 
