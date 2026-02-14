@@ -38,14 +38,14 @@ This command automatically:
   - Configures network access for Claude-specific domains
 
 Examples:
+  faize claude start                              # uses current directory
   faize claude start --project ~/code/myapp
   faize claude start -p ~/code/myapp --cpus 4 --memory 8GB`,
 	RunE: runClaudeStart,
 }
 
 func init() {
-	claudeStartCmd.Flags().StringVarP(&startProjectDir, "project", "p", "", "project directory to mount (required)")
-	claudeStartCmd.MarkFlagRequired("project")
+	claudeStartCmd.Flags().StringVarP(&startProjectDir, "project", "p", "", "project directory to mount (default: current directory)")
 
 	claudeStartCmd.Flags().StringArrayVarP(&startMounts, "mount", "m", []string{}, "additional mount paths (repeatable)")
 	claudeStartCmd.Flags().IntVar(&startCPUs, "cpus", 0, "number of CPUs (default from config)")
@@ -61,6 +61,15 @@ func runClaudeStart(cmd *cobra.Command, args []string) error {
 	if startDebug {
 		os.Setenv("FAIZE_DEBUG", "1")
 		debug = true
+	}
+
+	// Default project directory to current working directory
+	if startProjectDir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current directory: %w", err)
+		}
+		startProjectDir = cwd
 	}
 
 	// Load configuration
