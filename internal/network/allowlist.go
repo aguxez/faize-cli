@@ -11,6 +11,7 @@ var Presets = map[string][]string{
 	"github":    {"github.com", "api.github.com", "raw.githubusercontent.com"},
 	"anthropic": {"api.anthropic.com", "anthropic.com"},
 	"openai":    {"api.openai.com", "openai.com"},
+	"bun":       {"bun.sh", "registry.npmjs.org"},
 }
 
 // Special values
