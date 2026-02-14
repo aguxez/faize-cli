@@ -281,14 +281,9 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	// Rewrite hardcoded host paths in plugin config files
 	// Plugins store absolute paths like /Users/<user>/.claude/... which don't exist in VM
 	sb.WriteString("# Rewrite host paths in plugin configs to VM paths\n")
-	sb.WriteString("echo 'Rewriting plugin paths...'\n")
-
-	// Debug: show what files exist
-	sb.WriteString("ls -la /home/claude/.claude/plugins/ 2>/dev/null || echo 'plugins dir missing'\n")
 
 	sb.WriteString("for jsonfile in /home/claude/.claude/plugins/*.json; do\n")
 	sb.WriteString("  [ -f \"$jsonfile\" ] || continue\n")
-	sb.WriteString("  echo \"Processing: $jsonfile\"\n")
 	sb.WriteString("  # Replace macOS home paths: /Users/<user>/.claude/ -> /home/claude/.claude/\n")
 	sb.WriteString("  sed -i 's|/Users/[^/]*/.claude/|/home/claude/.claude/|g' \"$jsonfile\"\n")
 	sb.WriteString("  # Replace Linux home paths: /home/<user>/.claude/ -> /home/claude/.claude/\n")
@@ -303,14 +298,11 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("# Rewrite projectPath to VM workspace\n")
 	sb.WriteString(fmt.Sprintf("sed -i 's|\"projectPath\": \"[^\"]*\"|\"projectPath\": \"%s\"|g' /home/claude/.claude/plugins/installed_plugins.json\n", vmWorkspace))
 
-	// Debug: verify the rewrite worked
-	sb.WriteString("echo 'Verifying path rewrite...'\n")
-	sb.WriteString("grep -o 'installLocation.*' /home/claude/.claude/plugins/known_marketplaces.json 2>/dev/null | head -2 || echo 'known_marketplaces.json missing'\n")
-	sb.WriteString("echo 'Checking marketplace directories...'\n")
-	sb.WriteString("ls -la /home/claude/.claude/plugins/marketplaces/ 2>/dev/null || echo 'marketplaces dir missing'\n")
-	sb.WriteString("echo 'Checking omc marketplace content...'\n")
-	sb.WriteString("ls -la /home/claude/.claude/plugins/marketplaces/omc/ 2>/dev/null | head -10 || echo 'omc marketplace dir missing'\n")
-	sb.WriteString("cat /home/claude/.claude/plugins/installed_plugins.json 2>/dev/null | head -20 || echo 'installed_plugins.json missing'\n")
+	// Verify the rewrite worked (debug only)
+	sb.WriteString("if [ \"$FAIZE_DEBUG\" = \"1\" ]; then\n")
+	sb.WriteString("  echo 'Verifying path rewrite...'\n")
+	sb.WriteString("  grep -o 'installLocation.*' /home/claude/.claude/plugins/known_marketplaces.json 2>/dev/null | head -2 || echo 'known_marketplaces.json missing'\n")
+	sb.WriteString("fi\n")
 	sb.WriteString("\n")
 
 	// Change to project directory

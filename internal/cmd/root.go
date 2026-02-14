@@ -38,6 +38,7 @@ var rootCmd = &cobra.Command{
 	Long: `Faize provides isolated, reproducible development environments for AI agents.
 
 Create a sandboxed VM with network restrictions and controlled file access:
+  faize                                           # uses current directory
   faize --project ~/code/myapp --mount ~/.npmrc
 
 List running sessions:
@@ -61,7 +62,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug logging")
 
 	// Local flags for the root command
-	rootCmd.Flags().StringVarP(&projectDir, "project", "p", "", "project directory to mount (required)")
+	rootCmd.Flags().StringVarP(&projectDir, "project", "p", "", "project directory to mount (default: current directory)")
 	rootCmd.Flags().StringArrayVarP(&mounts, "mount", "m", []string{}, "additional mount paths (repeatable)")
 	rootCmd.Flags().StringArrayVarP(&networks, "network", "n", []string{}, "network access policies (e.g., npm, pypi, github, all, none)")
 	rootCmd.Flags().IntVar(&cpus, "cpus", 0, "number of CPUs (default from config)")
@@ -75,9 +76,13 @@ func initConfig() {
 }
 
 func runRoot(cmd *cobra.Command, args []string) error {
-	// If no project specified, show help
+	// If no project specified, default to current directory
 	if projectDir == "" {
-		return cmd.Help()
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current directory: %w", err)
+		}
+		projectDir = cwd
 	}
 
 	// Set debug env var for subpackages
