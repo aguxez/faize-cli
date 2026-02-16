@@ -252,7 +252,7 @@ func (m *VZManager) Create(cfg *Config) (*session.Session, error) {
 		debugLog("Kernel file size: %d bytes", info.Size())
 	}
 
-	cmdLine := "console=hvc0 root=/dev/vda rw rootwait init=/init"
+	cmdLine := "console=hvc0 root=/dev/vda ro rootwait init=/init"
 	if os.Getenv("FAIZE_DEBUG") != "1" {
 		cmdLine += " quiet"
 	}
@@ -308,7 +308,7 @@ func (m *VZManager) Create(cfg *Config) (*session.Session, error) {
 	// Use simpler disk attachment API for better macOS compatibility
 	diskAttachment, err := vz.NewDiskImageStorageDeviceAttachment(
 		rootfsPath,
-		false, // not read-only
+		true, // read-only: ephemeral overlay provides writes
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create disk attachment: %w", err)
