@@ -79,21 +79,45 @@ docker run --rm -v "$WORK_DIR/rootfs:/out" alpine:latest sh -c '
     echo "Claude CLI installed successfully"
 '
 
-# Create init script
-echo "==> Creating init script"
+echo "==> Creating init script (ephemeral overlay)"
 cat > "$WORK_DIR/rootfs/init" << 'INITSCRIPT'
 #!/bin/sh
-# Faize Claude VM init
+# Faize Claude VM init - ephemeral overlay root
+# Stage 1: Set up overlay so all rootfs writes go to tmpfs (discarded on shutdown)
 
-# Use busybox for core commands if needed
 export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
-# Mount filesystems
+# Mount essential virtual filesystems
 /bin/mount -t proc proc /proc 2>/dev/null || true
 /bin/mount -t sysfs sys /sys 2>/dev/null || true
 /bin/mount -t devtmpfs dev /dev 2>/dev/null || true
 
-# Mount bootstrap VirtioFS
+# Set up ephemeral overlay (tmpfs-backed writable layer over read-only rootfs)
+if /bin/grep -q overlay /proc/filesystems; then
+    /bin/mount -t tmpfs -o size=512M tmpfs /tmp
+    /bin/mkdir -p /tmp/overlay/upper /tmp/overlay/work /tmp/overlay/merged /tmp/overlay/lower
+    /bin/mount --bind / /tmp/overlay/lower
+    /bin/mount -t overlay overlay \
+        -o lowerdir=/tmp/overlay/lower,upperdir=/tmp/overlay/upper,workdir=/tmp/overlay/work \
+        /tmp/overlay/merged
+
+    # Pivot into the overlay root
+    cd /tmp/overlay/merged
+    /bin/mkdir -p old_root
+    pivot_root . old_root
+
+    # Re-mount essentials in the new overlay root
+    /bin/mount -t proc proc /proc 2>/dev/null || true
+    /bin/mount -t sysfs sys /sys 2>/dev/null || true
+    /bin/mount -t devtmpfs dev /dev 2>/dev/null || true
+
+    # Detach old root (overlay keeps internal references to lower layer)
+    /bin/umount -l /old_root 2>/dev/null || true
+else
+    echo "WARNING: overlayfs not available - rootfs is read-only, some operations may fail"
+fi
+
+# Stage 2: Mount bootstrap and hand off
 /bin/mkdir -p /mnt/bootstrap
 if /bin/mount -t virtiofs faize-bootstrap /mnt/bootstrap 2>/dev/null; then
     if [ -x /mnt/bootstrap/init.sh ]; then
