@@ -49,6 +49,9 @@ func TestLoadDefaults(t *testing.T) {
 	// Check Claude-specific config
 	assert.Contains(t, cfg.Claude.Network, "npm")
 	assert.Contains(t, cfg.Claude.AutoMounts, expandPath("~/.gitconfig:ro"))
+
+	// Credential persistence defaults to false (opt-in)
+	assert.False(t, cfg.Claude.ShouldPersistCredentials())
 }
 
 func TestExpandPaths(t *testing.T) {

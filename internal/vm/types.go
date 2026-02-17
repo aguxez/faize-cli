@@ -17,5 +17,6 @@ type Config struct {
 	Timeout       time.Duration
 	ClaudeMode    bool
 	HostClaudeDir string
-	ToolchainDir  string
+	ToolchainDir   string
+	CredentialsDir string
 }

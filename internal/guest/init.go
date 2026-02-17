@@ -92,7 +92,7 @@ func GenerateRCLocal(mounts []session.VMMount) string {
 // GenerateClaudeInitScript generates the bootstrap init script for Claude mode.
 // This script mounts VirtioFS shares, sets up Claude configuration, and launches Claude Code CLI.
 // Bun and Claude are pre-installed in the rootfs at /usr/local/bin.
-func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, policy *network.Policy) string {
+func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, policy *network.Policy, persistCredentials bool) string {
 	var sb strings.Builder
 
 	sb.WriteString("#!/bin/sh\n")
@@ -106,6 +106,22 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("  # Kill child processes gracefully\n")
 	sb.WriteString("  kill -TERM $(jobs -p) 2>/dev/null || true\n")
 	sb.WriteString("  wait\n")
+
+	if persistCredentials {
+		sb.WriteString("  # Persist credential files to host\n")
+		sb.WriteString("  if [ -d /mnt/host-credentials ]; then\n")
+		sb.WriteString("    if [ -s /home/claude/.claude/.credentials.json ]; then\n")
+		sb.WriteString("      cp /home/claude/.claude/.credentials.json /mnt/host-credentials/.credentials.json\n")
+		sb.WriteString("      echo \"Persisted .credentials.json to host\"\n")
+		sb.WriteString("    fi\n")
+		sb.WriteString("    if [ -s /home/claude/.claude.json ]; then\n")
+		sb.WriteString("      cp /home/claude/.claude.json /mnt/host-credentials/claude.json\n")
+		sb.WriteString("      echo \"Persisted .claude.json to host\"\n")
+		sb.WriteString("    fi\n")
+		sb.WriteString("    sync\n")
+		sb.WriteString("  fi\n")
+	}
+
 	sb.WriteString("  # Sync filesystems\n")
 	sb.WriteString("  sync\n")
 	sb.WriteString("  # Power off\n")
@@ -277,6 +293,26 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 		sb.WriteString(fmt.Sprintf("chown -R claude:claude /home/claude/.claude/%s\n", dir))
 	}
 	sb.WriteString("\n")
+
+	if persistCredentials {
+		sb.WriteString("# Mount credentials VirtioFS share\n")
+		sb.WriteString("mkdir -p /mnt/host-credentials\n")
+		sb.WriteString("mount -t virtiofs credentials /mnt/host-credentials -o rw\n\n")
+
+		sb.WriteString("# Copy persisted credentials from host (if they exist and have content)\n")
+		sb.WriteString("if [ -d /mnt/host-credentials ]; then\n")
+		sb.WriteString("  if [ -s /mnt/host-credentials/.credentials.json ]; then\n")
+		sb.WriteString("    cp /mnt/host-credentials/.credentials.json /home/claude/.claude/.credentials.json\n")
+		sb.WriteString("    chown claude:claude /home/claude/.claude/.credentials.json\n")
+		sb.WriteString("    echo \"Restored .credentials.json from host\"\n")
+		sb.WriteString("  fi\n")
+		sb.WriteString("  if [ -s /mnt/host-credentials/claude.json ]; then\n")
+		sb.WriteString("    cp /mnt/host-credentials/claude.json /home/claude/.claude.json\n")
+		sb.WriteString("    chown claude:claude /home/claude/.claude.json\n")
+		sb.WriteString("    echo \"Restored .claude.json from host\"\n")
+		sb.WriteString("  fi\n")
+		sb.WriteString("fi\n\n")
+	}
 
 	// Rewrite hardcoded host paths in plugin config files
 	// Plugins store absolute paths like /Users/<user>/.claude/... which don't exist in VM

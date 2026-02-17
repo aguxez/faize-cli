@@ -38,8 +38,18 @@ type Defaults struct {
 
 // Claude contains Claude-specific configuration
 type Claude struct {
-	Network    []string `mapstructure:"network"`
-	AutoMounts []string `mapstructure:"auto_mounts"`
+	Network            []string `mapstructure:"network"`
+	AutoMounts         []string `mapstructure:"auto_mounts"`
+	PersistCredentials *bool    `mapstructure:"persist_credentials"`
+}
+
+// ShouldPersistCredentials returns whether credential persistence is enabled.
+// Defaults to false when not explicitly set.
+func (c *Claude) ShouldPersistCredentials() bool {
+	if c.PersistCredentials == nil {
+		return false
+	}
+	return *c.PersistCredentials
 }
 
 // Load loads the configuration from ~/.faize/config.yaml or returns defaults
@@ -130,6 +140,7 @@ func setDefaults() {
 	// Claude-specific defaults
 	viper.SetDefault("claude.network", []string{"npm", "pypi", "github", "anthropic"})
 	viper.SetDefault("claude.auto_mounts", []string{})
+	viper.SetDefault("claude.persist_credentials", false)
 }
 
 // expandPaths expands ~ in paths to home directory

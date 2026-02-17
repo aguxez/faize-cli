@@ -151,6 +151,11 @@ func (m *VZManager) Create(cfg *Config) (*session.Session, error) {
 		if err := m.artifacts.EnsureToolchainDir(); err != nil {
 			return nil, fmt.Errorf("failed to ensure toolchain dir: %w", err)
 		}
+		if cfg.CredentialsDir != "" {
+			if err := m.artifacts.EnsureCredentialsDir(); err != nil {
+				return nil, fmt.Errorf("failed to ensure credentials dir: %w", err)
+			}
+		}
 	} else {
 		if err := m.artifacts.EnsureArtifacts(); err != nil {
 			return nil, fmt.Errorf("failed to ensure artifacts: %w", err)
@@ -170,7 +175,7 @@ func (m *VZManager) Create(cfg *Config) (*session.Session, error) {
 	// Generate init script
 	var initScript string
 	if cfg.ClaudeMode {
-		initScript = guest.GenerateClaudeInitScript(cfg.Mounts, cfg.ProjectDir, cfg.NetworkPolicy)
+		initScript = guest.GenerateClaudeInitScript(cfg.Mounts, cfg.ProjectDir, cfg.NetworkPolicy, cfg.CredentialsDir != "")
 	} else {
 		initScript = guest.GenerateInitScript(cfg.Mounts, cfg.ProjectDir)
 	}
@@ -238,6 +243,17 @@ func (m *VZManager) Create(cfg *Config) (*session.Session, error) {
 				ReadOnly: false,
 			}
 			allMounts = append(allMounts, toolchainMount)
+		}
+
+		// Add credentials mount
+		if cfg.CredentialsDir != "" {
+			credentialsMount := session.VMMount{
+				Source:   cfg.CredentialsDir,
+				Target:   "/mnt/host-credentials",
+				Tag:      "credentials",
+				ReadOnly: false,
+			}
+			allMounts = append(allMounts, credentialsMount)
 		}
 	}
 
