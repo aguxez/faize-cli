@@ -28,15 +28,22 @@ mkdir -p "$WORK_DIR/rootfs"/{bin,dev,etc,mnt/bootstrap,mnt/host-claude,opt/toolc
 # set permissions for tmp directory
 chmod 1777 "$WORK_DIR/rootfs/tmp"
 
+# Extra dependencies passed via environment variable (space-separated)
+EXTRA_DEPS="${EXTRA_DEPS:-}"
+
 # Extract packages from Alpine using Docker
 echo "==> Installing packages from Alpine"
-docker run --rm -v "$WORK_DIR/rootfs:/out" alpine:latest sh -c '
+if [ -n "$EXTRA_DEPS" ]; then
+    echo "    Extra packages: $EXTRA_DEPS"
+fi
+docker run --rm -v "$WORK_DIR/rootfs:/out" alpine:latest sh -c "
     # Install packages
-    apk add --no-cache bash curl ca-certificates git build-base python3 coreutils nodejs npm util-linux iptables ip6tables >/dev/null 2>&1
+    BASE_PKGS=\"bash curl ca-certificates git build-base python3 coreutils nodejs npm util-linux iptables ip6tables\"
+    apk add --no-cache \$BASE_PKGS $EXTRA_DEPS >/dev/null 2>&1
 
     # Copy the entire root filesystem structure
     for dir in bin lib usr sbin; do
-        cp -a /$dir /out/ 2>/dev/null || true
+        cp -a /\$dir /out/ 2>/dev/null || true
     done
 
     # Copy etc but be selective
@@ -53,7 +60,7 @@ docker run --rm -v "$WORK_DIR/rootfs:/out" alpine:latest sh -c '
     cp /etc/passwd /out/etc/passwd
     cp /etc/group /out/etc/group
     cp /etc/shadow /out/etc/shadow
-'
+"
 
 # Install Claude Code CLI only (Node.js already in rootfs)
 echo "==> Installing Claude Code CLI"

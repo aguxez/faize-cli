@@ -380,6 +380,11 @@ func (m *Manager) EnsureClaudeRootfs() error {
 
 // BuildClaudeRootfs builds claude rootfs using build-claude-rootfs.sh
 func (m *Manager) BuildClaudeRootfs() error {
+	return m.BuildClaudeRootfsWithDeps(nil)
+}
+
+// BuildClaudeRootfsWithDeps builds claude rootfs with extra dependencies baked in
+func (m *Manager) BuildClaudeRootfsWithDeps(extraDeps []string) error {
 	scriptPath, err := m.findClaudeBuildScript()
 	if err != nil {
 		return fmt.Errorf("failed to find build-claude-rootfs.sh script: %w", err)
@@ -390,6 +395,13 @@ func (m *Manager) BuildClaudeRootfs() error {
 	cmd := exec.Command("bash", scriptPath, m.ClaudeRootfsPath())
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
+	// Pass extra dependencies via environment variable
+	if len(extraDeps) > 0 {
+		cmd.Env = append(os.Environ(),
+			fmt.Sprintf("EXTRA_DEPS=%s", strings.Join(extraDeps, " ")))
+		fmt.Printf("Extra dependencies: %v\n", extraDeps)
+	}
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to build claude rootfs: %w", err)
