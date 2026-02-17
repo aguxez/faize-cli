@@ -99,6 +99,11 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("# Faize Claude mode init script (non-root)\n")
 	sb.WriteString("set -e\n\n")
 
+	// Debug mode detection
+	sb.WriteString("# Debug mode detection\n")
+	sb.WriteString("FAIZE_DEBUG=0\n")
+	sb.WriteString("[ -f /mnt/bootstrap/debug ] && FAIZE_DEBUG=1\n\n")
+
 	// Add signal handler for graceful shutdown
 	sb.WriteString("# Signal handler for graceful shutdown\n")
 	sb.WriteString("cleanup() {\n")
@@ -112,11 +117,11 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 		sb.WriteString("  if [ -d /mnt/host-credentials ]; then\n")
 		sb.WriteString("    if [ -s /home/claude/.claude/.credentials.json ]; then\n")
 		sb.WriteString("      cp /home/claude/.claude/.credentials.json /mnt/host-credentials/.credentials.json\n")
-		sb.WriteString("      echo \"Persisted .credentials.json to host\"\n")
+		sb.WriteString("      [ \"$FAIZE_DEBUG\" = \"1\" ] && echo \"Persisted .credentials.json to host\"\n")
 		sb.WriteString("    fi\n")
 		sb.WriteString("    if [ -s /home/claude/.claude.json ]; then\n")
 		sb.WriteString("      cp /home/claude/.claude.json /mnt/host-credentials/claude.json\n")
-		sb.WriteString("      echo \"Persisted .claude.json to host\"\n")
+		sb.WriteString("      [ \"$FAIZE_DEBUG\" = \"1\" ] && echo \"Persisted .claude.json to host\"\n")
 		sb.WriteString("    fi\n")
 		sb.WriteString("    sync\n")
 		sb.WriteString("  fi\n")
@@ -154,7 +159,11 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("# Set system time from host\n")
 	sb.WriteString("if [ -f /mnt/bootstrap/hosttime ]; then\n")
 	sb.WriteString("  HOSTTIME=$(cat /mnt/bootstrap/hosttime)\n")
-	sb.WriteString("  date -s \"@$HOSTTIME\" >/dev/null 2>&1 && echo \"Clock synced from host\" || echo \"Clock sync failed\"\n")
+	sb.WriteString("  if date -s \"@$HOSTTIME\" >/dev/null 2>&1; then\n")
+	sb.WriteString("    [ \"$FAIZE_DEBUG\" = \"1\" ] && echo \"Clock synced from host\"\n")
+	sb.WriteString("  else\n")
+	sb.WriteString("    echo \"Clock sync failed\"\n")
+	sb.WriteString("  fi\n")
 	sb.WriteString("fi\n\n")
 
 	// Set terminal size from host (makes URLs clickable by preventing line wrapping)
@@ -163,12 +172,15 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("  TERMSIZE=$(cat /mnt/bootstrap/termsize 2>/dev/null) || true\n")
 	sb.WriteString("  COLS=$(echo $TERMSIZE | cut -d' ' -f1)\n")
 	sb.WriteString("  ROWS=$(echo $TERMSIZE | cut -d' ' -f2)\n")
-	sb.WriteString("  [ -n \"$COLS\" ] && [ -n \"$ROWS\" ] && stty cols $COLS rows $ROWS 2>/dev/null && echo \"Terminal size: ${COLS}x${ROWS}\" || true\n")
+	sb.WriteString("  if [ -n \"$COLS\" ] && [ -n \"$ROWS\" ]; then\n")
+	sb.WriteString("    stty cols $COLS rows $ROWS 2>/dev/null || true\n")
+	sb.WriteString("    [ \"$FAIZE_DEBUG\" = \"1\" ] && echo \"Terminal size: ${COLS}x${ROWS}\"\n")
+	sb.WriteString("  fi\n")
 	sb.WriteString("fi\n\n")
 
 	// Configure network via DHCP
 	sb.WriteString("# Configure network\n")
-	sb.WriteString("echo 'Setting up network...'\n")
+	sb.WriteString("[ \"$FAIZE_DEBUG\" = \"1\" ] && echo 'Setting up network...'\n")
 
 	// Bring up loopback
 	sb.WriteString("ifconfig lo 127.0.0.1 up\n")
@@ -176,15 +188,21 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	// Find and bring up the network interface
 	sb.WriteString("IFACE=$(ls /sys/class/net | grep -v lo | head -1)\n")
 	sb.WriteString("if [ -n \"$IFACE\" ]; then\n")
-	sb.WriteString("  echo \"Found interface: $IFACE\"\n")
+	sb.WriteString("  [ \"$FAIZE_DEBUG\" = \"1\" ] && echo \"Found interface: $IFACE\"\n")
 	sb.WriteString("  ifconfig $IFACE up\n")
 	sb.WriteString("  \n")
 	sb.WriteString("  # Run DHCP client (busybox udhcpc)\n")
-	sb.WriteString("  echo 'Running DHCP...'\n")
-	sb.WriteString("  udhcpc -i $IFACE -n -q -t 10 2>/dev/null && echo 'DHCP successful' || echo 'DHCP failed'\n")
+	sb.WriteString("  [ \"$FAIZE_DEBUG\" = \"1\" ] && echo 'Running DHCP...'\n")
+	sb.WriteString("  if udhcpc -i $IFACE -n -q -t 10 2>/dev/null; then\n")
+	sb.WriteString("    [ \"$FAIZE_DEBUG\" = \"1\" ] && echo 'DHCP successful'\n")
+	sb.WriteString("  else\n")
+	sb.WriteString("    echo 'DHCP failed'\n")
+	sb.WriteString("  fi\n")
 	sb.WriteString("  \n")
 	sb.WriteString("  # Show assigned IP\n")
-	sb.WriteString("  ifconfig $IFACE | grep 'inet addr' || ifconfig $IFACE | grep 'inet '\n")
+	sb.WriteString("  if [ \"$FAIZE_DEBUG\" = \"1\" ]; then\n")
+	sb.WriteString("    ifconfig $IFACE | grep 'inet addr' || ifconfig $IFACE | grep 'inet ' || true\n")
+	sb.WriteString("  fi\n")
 	sb.WriteString("fi\n\n")
 
 	// Ensure DNS is configured (DHCP may or may not set this)
@@ -197,8 +215,12 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 
 	// Test connectivity
 	sb.WriteString("# Test network connectivity\n")
-	sb.WriteString("echo 'Testing connectivity...'\n")
-	sb.WriteString("wget -q --spider http://api.anthropic.com 2>/dev/null && echo 'Network OK' || echo 'Network check failed (may still work)'\n\n")
+	sb.WriteString("[ \"$FAIZE_DEBUG\" = \"1\" ] && echo 'Testing connectivity...'\n")
+	sb.WriteString("if wget -q --spider http://api.anthropic.com 2>/dev/null; then\n")
+	sb.WriteString("  [ \"$FAIZE_DEBUG\" = \"1\" ] && echo 'Network OK'\n")
+	sb.WriteString("else\n")
+	sb.WriteString("  echo 'Network check failed (may still work)'\n")
+	sb.WriteString("fi\n\n")
 
 	// Apply network policy if specified
 	if policy != nil && !policy.AllowAll {
@@ -213,7 +235,7 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 		} else if len(policy.Domains) > 0 {
 			// Domain-based allowlist
 			sb.WriteString("# === Network Policy: Domain Allowlist ===\n")
-			sb.WriteString("echo 'Applying network policy: domain allowlist'\n\n")
+			sb.WriteString("[ \"$FAIZE_DEBUG\" = \"1\" ] && echo 'Applying network policy: domain allowlist'\n\n")
 			sb.WriteString("# Default: drop all outbound except established connections\n")
 			sb.WriteString("iptables -P OUTPUT DROP\n")
 			sb.WriteString("iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT\n")
@@ -227,8 +249,7 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 			sb.WriteString("\n")
 			sb.WriteString("# Brief wait for DNS to stabilize after DHCP\n")
 			sb.WriteString("sleep 1\n\n")
-			sb.WriteString("FAIZE_DEBUG=0\n")
-			sb.WriteString("[ -f /mnt/bootstrap/debug ] && FAIZE_DEBUG=1\n\n")
+			sb.WriteString("# FAIZE_DEBUG already set at top of script\n")
 			sb.WriteString("for domain in $ALLOWED_DOMAINS; do\n")
 			sb.WriteString("  [ \"$FAIZE_DEBUG\" = \"1\" ] && echo \"Resolving $domain...\"\n")
 			sb.WriteString("  # Use temp file to avoid subshell issues with pipe\n")
@@ -247,7 +268,7 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 			sb.WriteString("  echo '=== iptables OUTPUT rules ==='\n")
 			sb.WriteString("  iptables -L OUTPUT -n 2>/dev/null | head -20 || echo 'Failed to list iptables rules'\n")
 			sb.WriteString("fi\n\n")
-			sb.WriteString("echo 'Network policy applied'\n\n")
+			sb.WriteString("[ \"$FAIZE_DEBUG\" = \"1\" ] && echo 'Network policy applied'\n\n")
 		}
 	}
 
@@ -304,12 +325,12 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 		sb.WriteString("  if [ -s /mnt/host-credentials/.credentials.json ]; then\n")
 		sb.WriteString("    cp /mnt/host-credentials/.credentials.json /home/claude/.claude/.credentials.json\n")
 		sb.WriteString("    chown claude:claude /home/claude/.claude/.credentials.json\n")
-		sb.WriteString("    echo \"Restored .credentials.json from host\"\n")
+		sb.WriteString("    [ \"$FAIZE_DEBUG\" = \"1\" ] && echo \"Restored .credentials.json from host\"\n")
 		sb.WriteString("  fi\n")
 		sb.WriteString("  if [ -s /mnt/host-credentials/claude.json ]; then\n")
 		sb.WriteString("    cp /mnt/host-credentials/claude.json /home/claude/.claude.json\n")
 		sb.WriteString("    chown claude:claude /home/claude/.claude.json\n")
-		sb.WriteString("    echo \"Restored .claude.json from host\"\n")
+		sb.WriteString("    [ \"$FAIZE_DEBUG\" = \"1\" ] && echo \"Restored .claude.json from host\"\n")
 		sb.WriteString("  fi\n")
 		sb.WriteString("fi\n\n")
 	}

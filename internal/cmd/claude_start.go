@@ -179,13 +179,12 @@ func runClaudeStart(cmd *cobra.Command, args []string) error {
 
 	// Parse network policy
 	policy := network.Parse(claudeNetworks)
-	fmt.Printf("Network policy: ")
 	if policy.AllowAll {
-		fmt.Println("allow all traffic")
+		Debug("Network policy: allow all traffic")
 	} else if policy.Blocked {
-		fmt.Println("no network access")
+		Debug("Network policy: no network access")
 	} else {
-		fmt.Printf("allowed domains: %v\n", policy.Domains)
+		Debug("Network policy: allowed domains: %v", policy.Domains)
 	}
 
 	// Create VM configuration
@@ -203,25 +202,25 @@ func runClaudeStart(cmd *cobra.Command, args []string) error {
 		CredentialsDir: credentialsDir,
 	}
 
-	// Print configuration
-	fmt.Println("\nClaude session configuration:")
-	fmt.Printf("  Mode: Claude-optimized\n")
-	fmt.Printf("  Project: %s\n", vmConfig.ProjectDir)
-	fmt.Printf("  Claude dir: %s (ro)\n", claudeDir)
-	fmt.Printf("  Toolchain: %s (rw)\n", toolchainDir)
+	// Print configuration (debug only)
+	Debug("Claude session configuration:")
+	Debug("  Mode: Claude-optimized")
+	Debug("  Project: %s", vmConfig.ProjectDir)
+	Debug("  Claude dir: %s (ro)", claudeDir)
+	Debug("  Toolchain: %s (rw)", toolchainDir)
 	if credentialsDir != "" {
-		fmt.Printf("  Credentials: %s (rw)\n", credentialsDir)
+		Debug("  Credentials: %s (rw)", credentialsDir)
 	}
-	fmt.Printf("  CPUs: %d\n", vmConfig.CPUs)
-	fmt.Printf("  Memory: %s\n", vmConfig.Memory)
-	fmt.Printf("  Timeout: %s\n", vmConfig.Timeout)
-	fmt.Printf("  Mounts: %d configured\n", len(vmConfig.Mounts))
+	Debug("  CPUs: %d", vmConfig.CPUs)
+	Debug("  Memory: %s", vmConfig.Memory)
+	Debug("  Timeout: %s", vmConfig.Timeout)
+	Debug("  Mounts: %d configured", len(vmConfig.Mounts))
 	for _, m := range vmConfig.Mounts {
 		mode := "rw"
 		if m.ReadOnly {
 			mode = "ro"
 		}
-		fmt.Printf("    %s -> %s (%s)\n", m.Source, m.Target, mode)
+		Debug("    %s -> %s (%s)", m.Source, m.Target, mode)
 	}
 
 	// Create VM manager
@@ -255,7 +254,9 @@ func runClaudeStart(cmd *cobra.Command, args []string) error {
 	}
 	Debug("VM started successfully")
 
-	fmt.Printf("\nSession started: %s\n", sess.ID)
+	projectName := filepath.Base(vmConfig.ProjectDir)
+	fmt.Printf("\nSession %s | %s | %d CPUs, %s | %s timeout\n",
+		sess.ID, projectName, vmConfig.CPUs, vmConfig.Memory, vmConfig.Timeout)
 
 	// Always attach to console after starting
 	fmt.Println("Attaching to console... (~. to detach)")
