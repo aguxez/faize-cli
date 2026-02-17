@@ -19,4 +19,5 @@ type Config struct {
 	HostClaudeDir string
 	ToolchainDir   string
 	CredentialsDir string
+	ExtraDeps      []string
 }

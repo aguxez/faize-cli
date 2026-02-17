@@ -41,6 +41,7 @@ type Claude struct {
 	Network            []string `mapstructure:"network"`
 	AutoMounts         []string `mapstructure:"auto_mounts"`
 	PersistCredentials *bool    `mapstructure:"persist_credentials"`
+	ExtraDeps          []string `mapstructure:"extra_deps"`
 }
 
 // ShouldPersistCredentials returns whether credential persistence is enabled.
@@ -141,6 +142,7 @@ func setDefaults() {
 	viper.SetDefault("claude.network", []string{"npm", "pypi", "github", "anthropic"})
 	viper.SetDefault("claude.auto_mounts", []string{})
 	viper.SetDefault("claude.persist_credentials", false)
+	viper.SetDefault("claude.extra_deps", []string{})
 }
 
 // expandPaths expands ~ in paths to home directory

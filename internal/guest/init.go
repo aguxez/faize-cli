@@ -92,7 +92,7 @@ func GenerateRCLocal(mounts []session.VMMount) string {
 // GenerateClaudeInitScript generates the bootstrap init script for Claude mode.
 // This script mounts VirtioFS shares, sets up Claude configuration, and launches Claude Code CLI.
 // Bun and Claude are pre-installed in the rootfs at /usr/local/bin.
-func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, policy *network.Policy, persistCredentials bool) string {
+func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, policy *network.Policy, persistCredentials bool, extraDeps []string) string {
 	var sb strings.Builder
 
 	sb.WriteString("#!/bin/sh\n")
@@ -212,6 +212,14 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("  echo 'nameserver 8.8.8.8' > /etc/resolv.conf\n")
 	sb.WriteString("  echo 'nameserver 1.1.1.1' >> /etc/resolv.conf\n")
 	sb.WriteString("}\n\n")
+
+	// Install extra dependencies if configured
+	if len(extraDeps) > 0 {
+		sb.WriteString("# Install extra dependencies\n")
+		sb.WriteString("echo 'Installing extra packages...'\n")
+		sb.WriteString(fmt.Sprintf("apk add --no-cache %s\n", strings.Join(extraDeps, " ")))
+		sb.WriteString("echo 'Extra packages installed'\n\n")
+	}
 
 	// Test connectivity
 	sb.WriteString("# Test network connectivity\n")

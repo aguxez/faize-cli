@@ -200,6 +200,7 @@ func runClaudeStart(cmd *cobra.Command, args []string) error {
 		HostClaudeDir:  claudeDir,
 		ToolchainDir:   toolchainDir,
 		CredentialsDir: credentialsDir,
+		ExtraDeps:      cfg.Claude.ExtraDeps,
 	}
 
 	// Print configuration (debug only)
@@ -254,23 +255,22 @@ func runClaudeStart(cmd *cobra.Command, args []string) error {
 	}
 	Debug("VM started successfully")
 
+	// Ensure session is stopped when we exit (detach, VM stop, error, signal)
+	defer func() {
+		fmt.Printf("\nStopping session %s...\n", sess.ID)
+		if stopErr := manager.Stop(sess.ID); stopErr != nil {
+			Debug("Failed to stop session: %v", stopErr)
+		}
+	}()
+
 	projectName := filepath.Base(vmConfig.ProjectDir)
 	fmt.Printf("\nSession %s | %s | %d CPUs, %s | %s timeout\n",
 		sess.ID, projectName, vmConfig.CPUs, vmConfig.Memory, vmConfig.Timeout)
 
-	// Always attach to console after starting
+	// Attach to console — session stops when we return
 	fmt.Println("Attaching to console... (~. to detach)")
-	err = manager.Attach(sess.ID)
-	if errors.Is(err, vm.ErrUserDetach) {
-		fmt.Println("\nDetached from session")
-		fmt.Printf("Session %s still running. Reattach with: faize claude attach %s\n", sess.ID, sess.ID)
-
-		// Keep process alive - block until VM stops or signal received
-		// This keeps the console proxy server running so attach can reconnect
-		fmt.Println("(Process staying alive for reattach. Press Ctrl+C again to stop VM)")
-		<-manager.WaitForVMStop(sess.ID)
-		fmt.Printf("\nSession %s stopped.\n", sess.ID)
-		return nil
+	if err := manager.Attach(sess.ID); err != nil && !errors.Is(err, vm.ErrUserDetach) {
+		return fmt.Errorf("console error: %w", err)
 	}
-	return err
+	return nil
 }
