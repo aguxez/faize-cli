@@ -270,7 +270,7 @@ func (m *VZManager) Create(cfg *Config) (*session.Session, error) {
 
 	cmdLine := "console=hvc0 root=/dev/vda ro rootwait init=/init"
 	if os.Getenv("FAIZE_DEBUG") != "1" {
-		cmdLine += " quiet"
+		cmdLine += " quiet loglevel=0"
 	}
 	debugLog("Kernel command line: %s", cmdLine)
 
