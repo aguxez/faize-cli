@@ -437,6 +437,17 @@ func (m *Manager) EnsureToolchainDir() error {
 	return os.MkdirAll(dir, 0755)
 }
 
+// CredentialsDir returns the path to ~/.faize/credentials/
+func (m *Manager) CredentialsDir() string {
+	return filepath.Join(m.FaizeDir(), "credentials")
+}
+
+// EnsureCredentialsDir ensures credentials directory exists with restrictive permissions
+func (m *Manager) EnsureCredentialsDir() error {
+	dir := m.CredentialsDir()
+	return os.MkdirAll(dir, 0700)
+}
+
 // findBuildScript locates the build-rootfs.sh script
 // Looks in ../scripts/ relative to the binary, or cli/scripts/ relative to repo root
 func (m *Manager) findBuildScript() (string, error) {

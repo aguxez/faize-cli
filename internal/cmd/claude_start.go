@@ -17,12 +17,13 @@ import (
 )
 
 var (
-	startProjectDir string
-	startMounts     []string
-	startCPUs       int
-	startMemory     string
-	startTimeout    string
-	startDebug      bool
+	startProjectDir        string
+	startMounts            []string
+	startCPUs              int
+	startMemory            string
+	startTimeout           string
+	startDebug             bool
+	startPersistCreds      bool
 )
 
 var claudeStartCmd = &cobra.Command{
@@ -52,6 +53,7 @@ func init() {
 	claudeStartCmd.Flags().StringVar(&startMemory, "memory", "", "memory limit (e.g., 4GB)")
 	claudeStartCmd.Flags().StringVarP(&startTimeout, "timeout", "t", "", "session timeout (e.g., 2h)")
 	claudeStartCmd.Flags().BoolVar(&startDebug, "debug", false, "enable debug logging")
+	claudeStartCmd.Flags().BoolVar(&startPersistCreds, "persist-credentials", false, "persist Claude credentials across sessions")
 
 	claudeCmd.AddCommand(claudeStartCmd)
 }
@@ -96,6 +98,17 @@ func runClaudeStart(cmd *cobra.Command, args []string) error {
 	// Ensure ~/.faize/toolchain exists
 	if err := os.MkdirAll(toolchainDir, 0755); err != nil {
 		return fmt.Errorf("failed to create toolchain directory: %w", err)
+	}
+
+	// Determine credential persistence
+	persistCreds := cfg.Claude.ShouldPersistCredentials() || startPersistCreds
+	var credentialsDir string
+	if persistCreds {
+		credentialsDir = filepath.Join(home, ".faize", "credentials")
+		if err := os.MkdirAll(credentialsDir, 0700); err != nil {
+			return fmt.Errorf("failed to create credentials directory: %w", err)
+		}
+		// No need to pre-create empty files - copy logic handles missing files gracefully
 	}
 
 	// Apply defaults from config if not specified
@@ -184,9 +197,10 @@ func runClaudeStart(cmd *cobra.Command, args []string) error {
 		CPUs:          startCPUs,
 		Memory:        startMemory,
 		Timeout:       timeoutDuration,
-		ClaudeMode:    true,
-		HostClaudeDir: claudeDir,
-		ToolchainDir:  toolchainDir,
+		ClaudeMode:     true,
+		HostClaudeDir:  claudeDir,
+		ToolchainDir:   toolchainDir,
+		CredentialsDir: credentialsDir,
 	}
 
 	// Print configuration
@@ -195,6 +209,9 @@ func runClaudeStart(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Project: %s\n", vmConfig.ProjectDir)
 	fmt.Printf("  Claude dir: %s (ro)\n", claudeDir)
 	fmt.Printf("  Toolchain: %s (rw)\n", toolchainDir)
+	if credentialsDir != "" {
+		fmt.Printf("  Credentials: %s (rw)\n", credentialsDir)
+	}
 	fmt.Printf("  CPUs: %d\n", vmConfig.CPUs)
 	fmt.Printf("  Memory: %s\n", vmConfig.Memory)
 	fmt.Printf("  Timeout: %s\n", vmConfig.Timeout)
