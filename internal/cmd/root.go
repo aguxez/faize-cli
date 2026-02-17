@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -233,15 +234,22 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	}
 	Debug("VM started successfully")
 
+	// Ensure session is stopped when we exit
+	defer func() {
+		fmt.Printf("\nStopping session %s...\n", sess.ID)
+		if stopErr := manager.Stop(sess.ID); stopErr != nil {
+			Debug("Failed to stop session: %v", stopErr)
+		}
+	}()
+
 	projectName := filepath.Base(vmConfig.ProjectDir)
 	fmt.Printf("\nSession %s | %s | %d CPUs, %s | %s timeout\n",
 		sess.ID, projectName, vmConfig.CPUs, vmConfig.Memory, vmConfig.Timeout)
 
-	// Attach to console
-	fmt.Println("Attaching to console... (Ctrl+C to detach)")
-	if err := manager.Attach(sess.ID); err != nil {
-		return fmt.Errorf("failed to attach to console: %w", err)
+	// Attach to console — session stops when we return
+	fmt.Println("Attaching to console... (~. to detach)")
+	if err := manager.Attach(sess.ID); err != nil && !errors.Is(err, vm.ErrUserDetach) {
+		return fmt.Errorf("console error: %w", err)
 	}
-
 	return nil
 }
