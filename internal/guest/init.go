@@ -108,6 +108,8 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("# Signal handler for graceful shutdown\n")
 	sb.WriteString("cleanup() {\n")
 	sb.WriteString("  echo 'Shutting down...'\n")
+	sb.WriteString("  # Kill resize watcher if running\n")
+	sb.WriteString("  [ -n \"$RESIZE_WATCHER_PID\" ] && kill $RESIZE_WATCHER_PID 2>/dev/null || true\n")
 	sb.WriteString("  # Kill child processes gracefully\n")
 	sb.WriteString("  kill -TERM $(jobs -p) 2>/dev/null || true\n")
 	sb.WriteString("  wait\n")
@@ -380,6 +382,34 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("    echo 'npm registry FAILED'\n")
 	sb.WriteString("  fi\n")
 	sb.WriteString("fi\n\n")
+
+	// Background terminal resize watcher — polls VirtioFS termsize file and
+	// resizes PTYs when the host terminal dimensions change.
+	sb.WriteString("# Background terminal resize watcher\n")
+	sb.WriteString("(\n")
+	sb.WriteString("  LAST_SIZE=\"\"\n")
+	sb.WriteString("  while true; do\n")
+	sb.WriteString("    if [ -f /mnt/bootstrap/termsize ]; then\n")
+	sb.WriteString("      NEW_SIZE=$(cat /mnt/bootstrap/termsize 2>/dev/null) || true\n")
+	sb.WriteString("      if [ -n \"$NEW_SIZE\" ] && [ \"$NEW_SIZE\" != \"$LAST_SIZE\" ]; then\n")
+	sb.WriteString("        LAST_SIZE=\"$NEW_SIZE\"\n")
+	sb.WriteString("        COLS=$(echo $NEW_SIZE | cut -d' ' -f1)\n")
+	sb.WriteString("        ROWS=$(echo $NEW_SIZE | cut -d' ' -f2)\n")
+	sb.WriteString("        if [ -n \"$COLS\" ] && [ -n \"$ROWS\" ]; then\n")
+	sb.WriteString("          # Resize only the first PTY slave (created by script)\n")
+	sb.WriteString("          # stty TIOCSWINSZ ioctl triggers SIGWINCH to the PTY's\n")
+	sb.WriteString("          # foreground process group automatically\n")
+	sb.WriteString("          PTY=$(ls /dev/pts/[0-9]* 2>/dev/null | head -1) || true\n")
+	sb.WriteString("          if [ -n \"$PTY\" ]; then\n")
+	sb.WriteString("            stty -F \"$PTY\" cols $COLS rows $ROWS 2>/dev/null || true\n")
+	sb.WriteString("          fi\n")
+	sb.WriteString("        fi\n")
+	sb.WriteString("      fi\n")
+	sb.WriteString("    fi\n")
+	sb.WriteString("    sleep 1\n")
+	sb.WriteString("  done\n")
+	sb.WriteString(") &\n")
+	sb.WriteString("RESIZE_WATCHER_PID=$!\n\n")
 
 	// Launch Claude CLI as non-root user with PTY allocation via script command
 	// The script command allocates a PTY which Claude/Ink requires for raw mode
