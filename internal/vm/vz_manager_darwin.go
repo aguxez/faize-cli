@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -517,17 +518,34 @@ func (m *VZManager) Stop(id string) error {
 
 	m.mu.Unlock()
 
+	// Check if VM is already stopped
+	if vm.State() == vz.VirtualMachineStateStopped || vm.State() == vz.VirtualMachineStateError {
+		// VM already stopped, just update session status
+		sess, err := m.sessions.Load(id)
+		if err == nil {
+			sess.Status = "stopped"
+			m.sessions.Save(sess)
+		}
+		return nil
+	}
+
 	// Request stop
 	if vm.CanRequestStop() {
 		if _, err := vm.RequestStop(); err != nil {
 			// Force stop if graceful fails
 			if err := vm.Stop(); err != nil {
-				return fmt.Errorf("failed to stop VM: %w", err)
+				// Ignore "already stopped" race condition errors
+				if !strings.Contains(err.Error(), "Invalid virtual machine state transition") {
+					return fmt.Errorf("failed to stop VM: %w", err)
+				}
 			}
 		}
 	} else {
 		if err := vm.Stop(); err != nil {
-			return fmt.Errorf("failed to stop VM: %w", err)
+			// Ignore "already stopped" race condition errors
+			if !strings.Contains(err.Error(), "Invalid virtual machine state transition") {
+				return fmt.Errorf("failed to stop VM: %w", err)
+			}
 		}
 	}
 

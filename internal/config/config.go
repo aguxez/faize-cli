@@ -23,6 +23,7 @@ var HardcodedBlockedPaths = []string{
 // Config represents the Faize CLI configuration
 type Config struct {
 	Defaults     Defaults `mapstructure:"defaults"`
+	Networks     []string `mapstructure:"networks"`
 	BlockedPaths []string `mapstructure:"blocked_paths"`
 	AutoMounts   []string `mapstructure:"auto_mounts"`
 	Claude       Claude   `mapstructure:"claude"`
@@ -30,15 +31,13 @@ type Config struct {
 
 // Defaults contains default values for sandbox execution
 type Defaults struct {
-	CPUs    int      `mapstructure:"cpus"`
-	Memory  string   `mapstructure:"memory"`
-	Timeout string   `mapstructure:"timeout"`
-	Network []string `mapstructure:"network"`
+	CPUs    int    `mapstructure:"cpus"`
+	Memory  string `mapstructure:"memory"`
+	Timeout string `mapstructure:"timeout"`
 }
 
 // Claude contains Claude-specific configuration
 type Claude struct {
-	Network            []string `mapstructure:"network"`
 	AutoMounts         []string `mapstructure:"auto_mounts"`
 	PersistCredentials *bool    `mapstructure:"persist_credentials"`
 	ExtraDeps          []string `mapstructure:"extra_deps"`
@@ -102,7 +101,7 @@ func setDefaults() {
 	viper.SetDefault("defaults.cpus", 2)
 	viper.SetDefault("defaults.memory", "4GB")
 	viper.SetDefault("defaults.timeout", "2h")
-	viper.SetDefault("defaults.network", []string{"npm", "pypi", "github", "anthropic"})
+	viper.SetDefault("networks", []string{"npm", "pypi", "github", "anthropic"})
 
 	// Blocked paths (SECURITY CRITICAL)
 	blockedPaths := []string{
@@ -139,7 +138,6 @@ func setDefaults() {
 	viper.SetDefault("auto_mounts", []string{})
 
 	// Claude-specific defaults
-	viper.SetDefault("claude.network", []string{"npm", "pypi", "github", "anthropic"})
 	viper.SetDefault("claude.auto_mounts", []string{})
 	viper.SetDefault("claude.persist_credentials", false)
 	viper.SetDefault("claude.extra_deps", []string{})

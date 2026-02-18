@@ -21,10 +21,10 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Equal(t, 2, cfg.Defaults.CPUs)
 	assert.Equal(t, "4GB", cfg.Defaults.Memory)
 	assert.Equal(t, "2h", cfg.Defaults.Timeout)
-	assert.Contains(t, cfg.Defaults.Network, "npm")
-	assert.Contains(t, cfg.Defaults.Network, "pypi")
-	assert.Contains(t, cfg.Defaults.Network, "github")
-	assert.Contains(t, cfg.Defaults.Network, "anthropic")
+	assert.Contains(t, cfg.Networks, "npm")
+	assert.Contains(t, cfg.Networks, "pypi")
+	assert.Contains(t, cfg.Networks, "github")
+	assert.Contains(t, cfg.Networks, "anthropic")
 
 	// Check blocked paths (SECURITY CRITICAL)
 	assert.Contains(t, cfg.BlockedPaths, expandPath("~/.ssh"))
@@ -47,7 +47,6 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Contains(t, cfg.AutoMounts, expandPath("~/.gitconfig:ro"))
 
 	// Check Claude-specific config
-	assert.Contains(t, cfg.Claude.Network, "npm")
 	assert.Contains(t, cfg.Claude.AutoMounts, expandPath("~/.gitconfig:ro"))
 
 	// Credential persistence defaults to false (opt-in)
