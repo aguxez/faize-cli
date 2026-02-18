@@ -205,6 +205,12 @@ func (m *VZManager) Create(cfg *Config) (*session.Session, error) {
 		}
 	}
 
+	// Create clipboard directory for host-to-guest clipboard sync
+	clipboardDir := filepath.Join(bootstrapDir, "clipboard")
+	if err := os.MkdirAll(clipboardDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create clipboard directory: %w", err)
+	}
+
 	// Write debug flag to bootstrap directory if debug mode is enabled
 	if os.Getenv("FAIZE_DEBUG") == "1" {
 		debugPath := filepath.Join(bootstrapDir, "debug")
@@ -603,6 +609,10 @@ func (m *VZManager) Attach(id string) error {
 	// Set up terminal resize propagation via VirtioFS termsize file
 	termsizePath := filepath.Join(m.artifacts.SessionDir(id), "bootstrap", "termsize")
 	client.SetTermsizePath(termsizePath)
+
+	// Set up clipboard sync via VirtioFS clipboard directory
+	clipboardDir := filepath.Join(m.artifacts.SessionDir(id), "bootstrap", "clipboard")
+	client.SetClipboardDir(clipboardDir)
 
 	// Write current terminal size immediately (handles reattach from different-sized terminal)
 	if term.IsTerminal(int(os.Stdout.Fd())) {
