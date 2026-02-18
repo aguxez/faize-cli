@@ -120,7 +120,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		timeout = cfg.Defaults.Timeout
 	}
 	if len(networks) == 0 {
-		networks = cfg.Defaults.Network
+		networks = cfg.Networks
 	}
 
 	// Parse timeout duration

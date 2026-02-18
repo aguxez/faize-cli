@@ -213,10 +213,14 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("  echo 'nameserver 1.1.1.1' >> /etc/resolv.conf\n")
 	sb.WriteString("}\n\n")
 
-	// Test connectivity
-	sb.WriteString("# Test network connectivity\n")
+	// Test connectivity (with DNS stabilization delay and retries)
+	sb.WriteString("# Brief wait for network/DNS to stabilize after DHCP\n")
+	sb.WriteString("sleep 2\n\n")
+	sb.WriteString("# Test network connectivity (with retries)\n")
 	sb.WriteString("[ \"$FAIZE_DEBUG\" = \"1\" ] && echo 'Testing connectivity...'\n")
-	sb.WriteString("if wget -q --spider http://api.anthropic.com 2>/dev/null; then\n")
+	sb.WriteString("if wget -q --spider --timeout=3 http://api.anthropic.com 2>/dev/null || \\\n")
+	sb.WriteString("   { sleep 1 && wget -q --spider --timeout=3 http://api.anthropic.com 2>/dev/null; } || \\\n")
+	sb.WriteString("   { sleep 2 && wget -q --spider --timeout=3 http://api.anthropic.com 2>/dev/null; }; then\n")
 	sb.WriteString("  [ \"$FAIZE_DEBUG\" = \"1\" ] && echo 'Network OK'\n")
 	sb.WriteString("else\n")
 	sb.WriteString("  echo 'Network check failed (may still work)'\n")
@@ -247,8 +251,6 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 			domainsStr := strings.Join(policy.Domains, " ")
 			sb.WriteString(fmt.Sprintf("ALLOWED_DOMAINS=\"%s\"\n", domainsStr))
 			sb.WriteString("\n")
-			sb.WriteString("# Brief wait for DNS to stabilize after DHCP\n")
-			sb.WriteString("sleep 1\n\n")
 			sb.WriteString("# FAIZE_DEBUG already set at top of script\n")
 			sb.WriteString("for domain in $ALLOWED_DOMAINS; do\n")
 			sb.WriteString("  [ \"$FAIZE_DEBUG\" = \"1\" ] && echo \"Resolving $domain...\"\n")
@@ -368,6 +370,16 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	} else {
 		sb.WriteString("cd /workspace\n\n")
 	}
+
+	// Test npm registry connectivity (debug only - helps diagnose auto-update failures)
+	sb.WriteString("# Test npm registry connectivity (debug only)\n")
+	sb.WriteString("if [ \"$FAIZE_DEBUG\" = \"1\" ]; then\n")
+	sb.WriteString("  if wget -q --spider --timeout=3 https://registry.npmjs.org 2>/dev/null; then\n")
+	sb.WriteString("    echo 'npm registry OK'\n")
+	sb.WriteString("  else\n")
+	sb.WriteString("    echo 'npm registry FAILED'\n")
+	sb.WriteString("  fi\n")
+	sb.WriteString("fi\n\n")
 
 	// Launch Claude CLI as non-root user with PTY allocation via script command
 	// The script command allocates a PTY which Claude/Ink requires for raw mode

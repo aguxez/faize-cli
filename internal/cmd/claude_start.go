@@ -122,8 +122,8 @@ func runClaudeStart(cmd *cobra.Command, args []string) error {
 		startTimeout = cfg.Defaults.Timeout
 	}
 
-	// Use Claude-specific network defaults
-	claudeNetworks := cfg.Claude.Network
+	// Use network config
+	claudeNetworks := cfg.Networks
 	if len(claudeNetworks) == 0 {
 		claudeNetworks = []string{"anthropic", "npm", "github", "bun"}
 	}
