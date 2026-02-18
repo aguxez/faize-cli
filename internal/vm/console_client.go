@@ -7,7 +7,9 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/term"
@@ -105,7 +107,14 @@ func (e *EscapeWriter) DetachChan() chan struct{} {
 
 // ConsoleClient manages connection to a VM console via Unix socket
 type ConsoleClient struct {
-	conn net.Conn
+	conn         net.Conn
+	termsizePath string
+}
+
+// SetTermsizePath sets the path to the termsize file used for propagating
+// terminal resize events to the VM guest via VirtioFS.
+func (c *ConsoleClient) SetTermsizePath(path string) {
+	c.termsizePath = path
 }
 
 // NewConsoleClient connects to a VM console Unix socket
@@ -132,6 +141,21 @@ func (c *ConsoleClient) Attach(stdin io.Reader, stdout io.Writer) error {
 		}
 		// Restore terminal on exit
 		defer term.Restore(stdinFd, oldState)
+	}
+
+	// Start terminal resize handler to propagate SIGWINCH to guest
+	if c.termsizePath != "" && term.IsTerminal(stdinFd) {
+		sigwinch := make(chan os.Signal, 1)
+		signal.Notify(sigwinch, syscall.SIGWINCH)
+		go func() {
+			for range sigwinch {
+				w, h, err := term.GetSize(stdinFd)
+				if err == nil && w > 0 && h > 0 {
+					os.WriteFile(c.termsizePath, []byte(fmt.Sprintf("%d %d", w, h)), 0644)
+				}
+			}
+		}()
+		defer signal.Stop(sigwinch)
 	}
 
 	// Check for immediate error response from proxy (e.g., "already attached")

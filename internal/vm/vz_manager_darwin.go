@@ -218,7 +218,7 @@ func (m *VZManager) Create(cfg *Config) (*session.Session, error) {
 		Source:   bootstrapDir,
 		Target:   "/mnt/bootstrap",
 		Tag:      "faize-bootstrap",
-		ReadOnly: true,
+		ReadOnly: false,
 	}
 	allMounts := append([]session.VMMount{bootstrapMount}, cfg.Mounts...)
 
@@ -599,6 +599,18 @@ func (m *VZManager) Attach(id string) error {
 		return fmt.Errorf("session %s is no longer running (cleaned up stale socket)", id)
 	}
 	defer client.Close()
+
+	// Set up terminal resize propagation via VirtioFS termsize file
+	termsizePath := filepath.Join(m.artifacts.SessionDir(id), "bootstrap", "termsize")
+	client.SetTermsizePath(termsizePath)
+
+	// Write current terminal size immediately (handles reattach from different-sized terminal)
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		if w, h, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 && h > 0 {
+			os.WriteFile(termsizePath, []byte(fmt.Sprintf("%d %d", w, h)), 0644)
+		}
+	}
+
 	return client.Attach(os.Stdin, os.Stdout)
 }
 
