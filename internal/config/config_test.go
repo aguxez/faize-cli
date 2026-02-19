@@ -121,6 +121,22 @@ func TestEnsureConfigDir(t *testing.T) {
 	assert.True(t, stat.IsDir())
 }
 
+func TestShouldMountGitContext(t *testing.T) {
+	// Default (nil) should return true
+	c := &Claude{}
+	assert.True(t, c.ShouldMountGitContext())
+
+	// Explicitly true
+	trueVal := true
+	c = &Claude{GitContext: &trueVal}
+	assert.True(t, c.ShouldMountGitContext())
+
+	// Explicitly false
+	falseVal := false
+	c = &Claude{GitContext: &falseVal}
+	assert.False(t, c.ShouldMountGitContext())
+}
+
 // Helper function to expand a single path for test assertions
 func expandPath(path string) string {
 	expanded, err := homedir.Expand(path)

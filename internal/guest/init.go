@@ -285,6 +285,9 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	}
 	sb.WriteString("\n")
 
+	// Mark all directories as safe for git (VirtioFS mounts have different ownership)
+	sb.WriteString("git config --system --add safe.directory '*'\n\n")
+
 	// Create Claude config directory
 	sb.WriteString("# Create Claude configuration directory\n")
 	sb.WriteString("mkdir -p /home/claude/.claude\n")

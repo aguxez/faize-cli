@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/faize-ai/faize/internal/config"
+	"github.com/faize-ai/faize/internal/git"
 	"github.com/faize-ai/faize/internal/mount"
 	"github.com/faize-ai/faize/internal/network"
 	"github.com/faize-ai/faize/internal/session"
@@ -24,6 +25,7 @@ var (
 	startTimeout           string
 	startDebug             bool
 	startPersistCreds      bool
+	startNoGitContext      bool
 )
 
 var claudeStartCmd = &cobra.Command{
@@ -54,6 +56,7 @@ func init() {
 	claudeStartCmd.Flags().StringVarP(&startTimeout, "timeout", "t", "", "session timeout (e.g., 2h)")
 	claudeStartCmd.Flags().BoolVar(&startDebug, "debug", false, "enable debug logging")
 	claudeStartCmd.Flags().BoolVar(&startPersistCreds, "persist-credentials", false, "persist Claude credentials across sessions")
+	claudeStartCmd.Flags().BoolVar(&startNoGitContext, "no-git-context", false, "disable automatic .git directory mounting from git root")
 
 	claudeCmd.AddCommand(claudeStartCmd)
 }
@@ -154,6 +157,18 @@ func runClaudeStart(cmd *cobra.Command, args []string) error {
 	}
 	allMountSpecs = append(allMountSpecs, cfg.Claude.AutoMounts...)
 	allMountSpecs = append(allMountSpecs, startMounts...)
+
+	// Auto-detect git root for monorepo support
+	if !startNoGitContext && cfg.Claude.ShouldMountGitContext() {
+		gitRoot := git.FindRoot(startProjectDir)
+		if gitRoot != "" && gitRoot != startProjectDir {
+			gitDirPath := filepath.Join(gitRoot, ".git")
+			if info, err := os.Stat(gitDirPath); err == nil && info.IsDir() {
+				allMountSpecs = append(allMountSpecs, gitDirPath+":"+gitDirPath+":ro")
+				Debug("Git root detected: %s (mounting .git read-only)", gitRoot)
+			}
+		}
+	}
 
 	// Parse and validate all mounts
 	var parsedMounts []session.VMMount
