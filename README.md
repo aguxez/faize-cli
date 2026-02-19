@@ -1,6 +1,16 @@
 # Faize
 
-Faize is a CLI that creates isolated, reproducible virtual machines for running AI agents with controlled resource allocation, network restrictions, and secure file mounting. It uses Apple's Virtualization.framework on macOS to spin up lightweight VMs with an ephemeral overlay filesystem, VirtioFS mounts, and a network allowlist.
+Faize is a CLI that creates isolated, reproducible virtual machines for running AI coding agents. It uses Apple's Virtualization.framework on macOS to spin up lightweight VMs with an ephemeral overlay filesystem, VirtioFS mounts, and a network allowlist.
+
+## Features
+
+- **Isolated VMs** — Each session runs in its own lightweight virtual machine with configurable CPU, memory, and timeout limits
+- **Ephemeral overlay filesystem** — Read-only rootfs with a writable overlay that resets between sessions
+- **Network allowlists** — Outbound network access controlled via domain-based presets or custom rules
+- **Secure file mounting** — Mount project directories into the VM with read-only or read-write access; sensitive paths (SSH keys, cloud credentials, keychains) are blocked by default
+- **Git context detection** — Automatically mounts the `.git` directory from the repository root so the VM has access to git history
+- **Clipboard bridge** — Syncs the host clipboard into the VM on Ctrl+V for text and image paste support
+- **Session management** — List, stop, and clean up VM sessions from the CLI
 
 ## Requirements
 
@@ -24,69 +34,38 @@ make install
 ## Quick Start
 
 ```bash
-# Launch a sandboxed VM for the current directory
-faize
+# Start a session for the current directory
+faize start
 
-# Launch with a specific project and extra mounts
-faize --project ~/code/myapp --mount ~/.npmrc
-
-# Start a Claude Code session
-faize claude start --project ~/code/myapp
+# Start with a specific project
+faize start --project ~/code/myapp
 
 # List running sessions
 faize ps
 
-# Stop a session
-faize stop <session-id>
+# Kill a session
+faize kill <session-id>
 ```
 
 ## Commands
 
-### `faize [flags]`
+### `faize start [flags]`
 
-Launch a sandboxed VM session.
+Start a new VM session. Automatically mounts `~/.claude` (read-only), `~/.faize/toolchain` (read-write), and sets up the project at `/workspace`.
 
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--project` | `-p` | Project directory to mount (default: current directory) |
 | `--mount` | `-m` | Additional mount paths (repeatable) |
-| `--network` | `-n` | Network access policies (e.g. `npm`, `pypi`, `github`, `all`, `none`) |
-| `--cpus` | | Number of CPUs (default: 2) |
-| `--memory` | | Memory limit, e.g. `4GB` (default: 4GB) |
-| `--timeout` | `-t` | Session timeout, e.g. `2h` (default: 2h) |
-| `--minimal-test` | | Test mode: 1 CPU, 512MB RAM, no mounts, no network |
+| `--timeout` | `-t` | Session timeout, e.g. `2h` (default: from config) |
+| `--persist-credentials` | | Persist Claude credentials across sessions |
+| `--no-git-context` | | Disable automatic `.git` directory mounting |
 | `--config` | | Config file path (default: `~/.faize/config.yaml`) |
 | `--debug` | | Enable debug logging |
-
-### `faize claude start [flags]`
-
-Start a Claude Code session in an isolated VM. Automatically mounts `~/.claude` (read-only), `~/.faize/toolchain` (read-write), and sets up the project at `/workspace`.
-
-| Flag | Short | Description |
-|------|-------|-------------|
-| `--project` | `-p` | Project directory (default: current directory) |
-| `--mount` | `-m` | Additional mount paths (repeatable) |
-| `--cpus` | | Number of CPUs |
-| `--memory` | | Memory limit |
-| `--timeout` | `-t` | Session timeout |
-| `--persist-credentials` | | Persist Claude credentials across sessions |
-| `--debug` | | Enable debug logging |
-
-### `faize claude attach <session-id>`
-
-Attach to a running Claude Code session.
-
-### `faize claude rebuild`
-
-Rebuild the rootfs image with extra dependencies from config.
 
 ### `faize ps`
 
 List running VM sessions.
-
-### `faize stop <session-id>`
-
-Stop a running session.
 
 ### `faize kill [--force]`
 
@@ -96,9 +75,13 @@ Remove session metadata. With `--force`, also stops running sessions.
 
 Clean up stopped sessions. `--all` removes all sessions; `--artifacts` also removes downloaded kernel and rootfs images.
 
+### `faize claude rebuild`
+
+Rebuild the rootfs image with extra dependencies from config. After updating `claude.extra_deps` in the config, run this command then start a new session.
+
 ## Network Policies
 
-Network access is controlled via domain allowlists. Use preset names or literal domains:
+Network access is controlled via domain allowlists configured in `~/.faize/config.yaml`:
 
 | Preset | Domains |
 |--------|---------|
@@ -110,12 +93,6 @@ Network access is controlled via domain allowlists. Use preset names or literal 
 | `bun` | bun.sh, registry.npmjs.org |
 
 Special values: `all` (unrestricted) and `none` (no network access).
-
-```bash
-faize --network npm --network github
-faize --network all
-faize --network none
-```
 
 ## Configuration
 
@@ -139,17 +116,22 @@ blocked_paths:
 
 claude:
   persist_credentials: false
+  git_context: true
   extra_deps:
     - python3
     - ripgrep
 ```
 
-### Security
+## Security
 
 Certain paths are always blocked from being mounted, regardless of configuration:
 
 - `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `~/.gnupg`, `~/.password-store`, `~/.docker/config.json`
-- Browser keystores, package manager credentials, kubeconfig, and other secret stores
+- Browser keystores and keychains (`~/Library/Keychains` on macOS, `~/.local/share/keyrings` on Linux)
+- Package manager credentials (`~/.netrc`, `~/.npmrc`, `~/.pypirc`)
+- Cloud and infrastructure configs (`~/.kube`, `~/.azure`, `~/.config/gh`)
+
+These hardcoded blocked paths cannot be overridden by user configuration.
 
 ## Project Structure
 
@@ -157,10 +139,11 @@ Certain paths are always blocked from being mounted, regardless of configuration
 internal/
   cmd/          CLI commands (Cobra)
   config/       Configuration loading and defaults
-  vm/           VM manager (Virtualization.framework on macOS, stub elsewhere)
+  vm/           VM lifecycle, console, clipboard bridge (Virtualization.framework on macOS)
   session/      Session persistence (~/.faize/sessions/)
   mount/        Mount parsing, validation, and blocked-path enforcement
   network/      Network allowlist and domain presets
+  git/          Git repository root detection
   guest/        Guest init script generation
   artifacts/    Kernel and rootfs download/build management
 scripts/
@@ -180,7 +163,3 @@ make vet         # Run go vet
 make dev         # Build and show help
 make clean       # Clean build artifacts
 ```
-
-## License
-
-See [LICENSE](LICENSE) for details.
