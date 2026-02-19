@@ -149,7 +149,10 @@ func (m *Manager) download(url, destPath, name string) error {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to write %s: %w", name, err)
 	}
-	_ = file.Close()
+	if err := file.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("failed to close %s: %w", name, err)
+	}
 
 	// Rename to final path (atomic)
 	if err := os.Rename(tmpPath, destPath); err != nil {

@@ -530,7 +530,9 @@ func (m *VZManager) Stop(id string) error {
 		sess, err := m.sessions.Load(id)
 		if err == nil {
 			sess.Status = "stopped"
-			_ = m.sessions.Save(sess)
+			if saveErr := m.sessions.Save(sess); saveErr != nil {
+				debugLog("Failed to save session state: %v", saveErr)
+			}
 		}
 		return nil
 	}
@@ -559,7 +561,9 @@ func (m *VZManager) Stop(id string) error {
 	sess, err := m.sessions.Load(id)
 	if err == nil {
 		sess.Status = "stopped"
-		_ = m.sessions.Save(sess)
+		if saveErr := m.sessions.Save(sess); saveErr != nil {
+			debugLog("Failed to save session state: %v", saveErr)
+		}
 	}
 
 	return nil
@@ -599,7 +603,9 @@ func (m *VZManager) Attach(id string) error {
 		// Update session status to stopped
 		if sess, loadErr := m.sessions.Load(id); loadErr == nil {
 			sess.Status = "stopped"
-			_ = m.sessions.Save(sess)
+			if saveErr := m.sessions.Save(sess); saveErr != nil {
+				debugLog("Failed to save session state: %v", saveErr)
+			}
 		}
 
 		return fmt.Errorf("session %s is no longer running (cleaned up stale socket)", id)
