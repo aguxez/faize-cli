@@ -164,12 +164,12 @@ func (m *VZManager) Create(cfg *Config) (*session.Session, error) {
 	}
 
 	// Generate session ID
-	id := uuid.New().String()[:8]
+	id := uuid.New().String()[:12]
 	debugLog("Session ID: %s", id)
 
 	// Create bootstrap directory for init script
 	bootstrapDir := filepath.Join(m.artifacts.SessionDir(id), "bootstrap")
-	if err := os.MkdirAll(bootstrapDir, 0755); err != nil {
+	if err := os.MkdirAll(bootstrapDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create bootstrap directory: %w", err)
 	}
 

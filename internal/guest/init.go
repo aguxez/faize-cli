@@ -8,6 +8,11 @@ import (
 	"github.com/faize-ai/faize/internal/session"
 )
 
+// shellQuote wraps a string in single quotes with proper escaping for shell interpolation.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
 // GenerateInitScript generates the bootstrap init script executed by the rootfs /init.
 // This script is written to /mnt/bootstrap/init.sh and called after the rootfs /init
 // has already mounted proc/sys/dev and the faize-bootstrap VirtioFS share.
@@ -28,7 +33,7 @@ func GenerateInitScript(mounts []session.VMMount, workDir string) string {
 		}
 
 		// Create mount point
-		sb.WriteString(fmt.Sprintf("mkdir -p %s\n", mount.Target))
+		sb.WriteString(fmt.Sprintf("mkdir -p %s\n", shellQuote(mount.Target)))
 
 		// Mount options
 		opts := "rw"
@@ -36,7 +41,7 @@ func GenerateInitScript(mounts []session.VMMount, workDir string) string {
 			opts = "ro"
 		}
 
-		sb.WriteString(fmt.Sprintf("mount -t virtiofs %s %s -o %s\n", tag, mount.Target, opts))
+		sb.WriteString(fmt.Sprintf("mount -t virtiofs %s %s -o %s\n", shellQuote(tag), shellQuote(mount.Target), opts))
 	}
 
 	sb.WriteString("\n")
@@ -51,7 +56,7 @@ func GenerateInitScript(mounts []session.VMMount, workDir string) string {
 	// Change to working directory
 	if workDir != "" {
 		sb.WriteString(fmt.Sprintf("# Change to project directory\n"))
-		sb.WriteString(fmt.Sprintf("cd %s\n\n", workDir))
+		sb.WriteString(fmt.Sprintf("cd %s\n\n", shellQuote(workDir)))
 	}
 
 	// Start shell
@@ -74,14 +79,14 @@ func GenerateRCLocal(mounts []session.VMMount) string {
 			tag = fmt.Sprintf("mount%d", i)
 		}
 
-		sb.WriteString(fmt.Sprintf("mkdir -p %s\n", mount.Target))
+		sb.WriteString(fmt.Sprintf("mkdir -p %s\n", shellQuote(mount.Target)))
 
 		opts := "rw"
 		if mount.ReadOnly {
 			opts = "ro"
 		}
 
-		sb.WriteString(fmt.Sprintf("mount -t virtiofs %s %s -o %s || true\n", tag, mount.Target, opts))
+		sb.WriteString(fmt.Sprintf("mount -t virtiofs %s %s -o %s || true\n", shellQuote(tag), shellQuote(mount.Target), opts))
 	}
 
 	sb.WriteString("\nexit 0\n")
@@ -143,12 +148,12 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 		if tag == "" {
 			tag = fmt.Sprintf("mount%d", i)
 		}
-		sb.WriteString(fmt.Sprintf("mkdir -p %s\n", mount.Target))
+		sb.WriteString(fmt.Sprintf("mkdir -p %s\n", shellQuote(mount.Target)))
 		opts := "rw"
 		if mount.ReadOnly {
 			opts = "ro"
 		}
-		sb.WriteString(fmt.Sprintf("mount -t virtiofs %s %s -o %s\n", tag, mount.Target, opts))
+		sb.WriteString(fmt.Sprintf("mount -t virtiofs %s %s -o %s\n", shellQuote(tag), shellQuote(mount.Target), opts))
 	}
 	sb.WriteString("\n")
 
@@ -207,22 +212,21 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("  fi\n")
 	sb.WriteString("fi\n\n")
 
-	// Ensure DNS is configured (DHCP may or may not set this)
-	sb.WriteString("# Ensure DNS configuration\n")
-	sb.WriteString("grep -q nameserver /etc/resolv.conf 2>/dev/null || echo 'nameserver 8.8.8.8' > /etc/resolv.conf\n")
-	sb.WriteString("grep -q '8.8.8.8\\|1.1.1.1' /etc/resolv.conf || {\n")
+	// Ensure DNS is configured (only inject public DNS if DHCP didn't provide any)
+	sb.WriteString("# Ensure DNS configuration (only inject public DNS if DHCP didn't provide any)\n")
+	sb.WriteString("if ! grep -q nameserver /etc/resolv.conf 2>/dev/null; then\n")
 	sb.WriteString("  echo 'nameserver 8.8.8.8' > /etc/resolv.conf\n")
 	sb.WriteString("  echo 'nameserver 1.1.1.1' >> /etc/resolv.conf\n")
-	sb.WriteString("}\n\n")
+	sb.WriteString("fi\n\n")
 
 	// Test connectivity (with DNS stabilization delay and retries)
 	sb.WriteString("# Brief wait for network/DNS to stabilize after DHCP\n")
 	sb.WriteString("sleep 2\n\n")
 	sb.WriteString("# Test network connectivity (with retries)\n")
 	sb.WriteString("[ \"$FAIZE_DEBUG\" = \"1\" ] && echo 'Testing connectivity...'\n")
-	sb.WriteString("if wget -q --spider --timeout=3 http://api.anthropic.com 2>/dev/null || \\\n")
-	sb.WriteString("   { sleep 1 && wget -q --spider --timeout=3 http://api.anthropic.com 2>/dev/null; } || \\\n")
-	sb.WriteString("   { sleep 2 && wget -q --spider --timeout=3 http://api.anthropic.com 2>/dev/null; }; then\n")
+	sb.WriteString("if wget -q --spider --timeout=3 https://api.anthropic.com 2>/dev/null || \\\n")
+	sb.WriteString("   { sleep 1 && wget -q --spider --timeout=3 https://api.anthropic.com 2>/dev/null; } || \\\n")
+	sb.WriteString("   { sleep 2 && wget -q --spider --timeout=3 https://api.anthropic.com 2>/dev/null; }; then\n")
 	sb.WriteString("  [ \"$FAIZE_DEBUG\" = \"1\" ] && echo 'Network OK'\n")
 	sb.WriteString("else\n")
 	sb.WriteString("  echo 'Network check failed (may still work)'\n")
@@ -246,12 +250,14 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 			sb.WriteString("iptables -P OUTPUT DROP\n")
 			sb.WriteString("iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT\n")
 			sb.WriteString("iptables -A OUTPUT -o lo -j ACCEPT\n\n")
-			sb.WriteString("# Allow DNS queries (required for resolution)\n")
-			sb.WriteString("iptables -A OUTPUT -p udp --dport 53 -j ACCEPT\n")
-			sb.WriteString("iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT\n\n")
+			sb.WriteString("# Allow DNS queries only to known resolvers\n")
+			sb.WriteString("iptables -A OUTPUT -p udp -d 8.8.8.8 --dport 53 -j ACCEPT\n")
+			sb.WriteString("iptables -A OUTPUT -p udp -d 1.1.1.1 --dport 53 -j ACCEPT\n")
+			sb.WriteString("iptables -A OUTPUT -p tcp -d 8.8.8.8 --dport 53 -j ACCEPT\n")
+			sb.WriteString("iptables -A OUTPUT -p tcp -d 1.1.1.1 --dport 53 -j ACCEPT\n\n")
 			sb.WriteString("# Resolve and allow specific domains\n")
 			domainsStr := strings.Join(policy.Domains, " ")
-			sb.WriteString(fmt.Sprintf("ALLOWED_DOMAINS=\"%s\"\n", domainsStr))
+			sb.WriteString(fmt.Sprintf("ALLOWED_DOMAINS=%s\n", shellQuote(domainsStr)))
 			sb.WriteString("\n")
 			sb.WriteString("# FAIZE_DEBUG already set at top of script\n")
 			sb.WriteString("for domain in $ALLOWED_DOMAINS; do\n")
@@ -281,12 +287,16 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("chown -R claude:claude /home/claude 2>/dev/null || true\n")
 	sb.WriteString("chown -R claude:claude /opt/toolchain 2>/dev/null || true\n")
 	if projectDir != "" {
-		sb.WriteString(fmt.Sprintf("chown -R claude:claude %s 2>/dev/null || true\n", projectDir))
+		sb.WriteString(fmt.Sprintf("chown -R claude:claude %s 2>/dev/null || true\n", shellQuote(projectDir)))
 	}
 	sb.WriteString("\n")
 
-	// Mark all directories as safe for git (VirtioFS mounts have different ownership)
-	sb.WriteString("git config --system --add safe.directory '*'\n\n")
+	// Mark project directory as safe for git (VirtioFS mounts have different ownership)
+	safeDir := projectDir
+	if safeDir == "" {
+		safeDir = "/workspace"
+	}
+	sb.WriteString(fmt.Sprintf("git config --system --add safe.directory %s\n\n", shellQuote(safeDir)))
 
 	// Install clipboard bridge shims (xclip/xsel)
 	// These scripts read clipboard data from VirtioFS, synced by the host on Ctrl+V
@@ -428,7 +438,7 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	}
 	sb.WriteString("# Rewrite projectPath to VM workspace\n")
 	sb.WriteString("if [ -f /home/claude/.claude/plugins/installed_plugins.json ]; then\n")
-	sb.WriteString(fmt.Sprintf("  sed -i 's|\"projectPath\": \"[^\"]*\"|\"projectPath\": \"%s\"|g' /home/claude/.claude/plugins/installed_plugins.json\n", vmWorkspace))
+	sb.WriteString(fmt.Sprintf("  sed -i 's|\"projectPath\": \"[^\"]*\"|\"projectPath\": \"%s\"|g' /home/claude/.claude/plugins/installed_plugins.json\n", strings.ReplaceAll(vmWorkspace, "'", "")))
 	sb.WriteString("fi\n")
 
 	// Verify the rewrite worked (debug only)
@@ -440,7 +450,7 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 
 	// Change to project directory
 	if projectDir != "" {
-		sb.WriteString(fmt.Sprintf("cd %s\n\n", projectDir))
+		sb.WriteString(fmt.Sprintf("cd %s\n\n", shellQuote(projectDir)))
 	} else {
 		sb.WriteString("cd /workspace\n\n")
 	}
@@ -508,7 +518,7 @@ func DefaultShellRC(workDir string) string {
 	sb.WriteString("export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\n")
 
 	if workDir != "" {
-		sb.WriteString(fmt.Sprintf("cd %s 2>/dev/null || true\n", workDir))
+		sb.WriteString(fmt.Sprintf("cd %s 2>/dev/null || true\n", shellQuote(workDir)))
 	}
 
 	return sb.String()
