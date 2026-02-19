@@ -49,7 +49,7 @@ func validateKernelFile(path string) error {
 	if err != nil {
 		return fmt.Errorf("cannot open kernel: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Read first 64 bytes for header detection
 	header := make([]byte, 64)
@@ -88,7 +88,7 @@ func validateRootfs(path string) error {
 	if err != nil {
 		return fmt.Errorf("cannot open rootfs: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// ext4 superblock is at offset 1024, magic is at offset 0x38 (56) within superblock
 	// Total offset: 1024 + 56 = 1080
@@ -405,7 +405,7 @@ func (m *VZManager) Create(cfg *Config) (*session.Session, error) {
 				m.mu.RUnlock()
 				if console != nil {
 					debugLog("Auto-detaching console due to VM state: %v", state)
-					console.Detach()
+					_ = console.Detach()
 				}
 			}
 		}
@@ -518,7 +518,7 @@ func (m *VZManager) Stop(id string) error {
 
 	// Stop and remove proxy
 	if proxy, ok := m.proxies[id]; ok {
-		proxy.Stop()
+		_ = proxy.Stop()
 		delete(m.proxies, id)
 	}
 
@@ -530,7 +530,7 @@ func (m *VZManager) Stop(id string) error {
 		sess, err := m.sessions.Load(id)
 		if err == nil {
 			sess.Status = "stopped"
-			m.sessions.Save(sess)
+			_ = m.sessions.Save(sess)
 		}
 		return nil
 	}
@@ -559,7 +559,7 @@ func (m *VZManager) Stop(id string) error {
 	sess, err := m.sessions.Load(id)
 	if err == nil {
 		sess.Status = "stopped"
-		m.sessions.Save(sess)
+		_ = m.sessions.Save(sess)
 	}
 
 	return nil
@@ -594,17 +594,17 @@ func (m *VZManager) Attach(id string) error {
 	if err != nil {
 		// Connection failed - socket is stale (process crashed)
 		// Clean up the orphaned socket file
-		os.Remove(socketPath)
+		_ = os.Remove(socketPath)
 
 		// Update session status to stopped
 		if sess, loadErr := m.sessions.Load(id); loadErr == nil {
 			sess.Status = "stopped"
-			m.sessions.Save(sess)
+			_ = m.sessions.Save(sess)
 		}
 
 		return fmt.Errorf("session %s is no longer running (cleaned up stale socket)", id)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// Set up terminal resize propagation via VirtioFS termsize file
 	termsizePath := filepath.Join(m.artifacts.SessionDir(id), "bootstrap", "termsize")
@@ -617,7 +617,7 @@ func (m *VZManager) Attach(id string) error {
 	// Write current terminal size immediately (handles reattach from different-sized terminal)
 	if term.IsTerminal(int(os.Stdout.Fd())) {
 		if w, h, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 && h > 0 {
-			os.WriteFile(termsizePath, []byte(fmt.Sprintf("%d %d", w, h)), 0644)
+			_ = os.WriteFile(termsizePath, []byte(fmt.Sprintf("%d %d", w, h)), 0644)
 		}
 	}
 
@@ -660,7 +660,7 @@ func (m *VZManager) WaitForVMStop(id string) <-chan struct{} {
 func parseMemory(mem string) uint64 {
 	var size uint64
 	var unit string
-	fmt.Sscanf(mem, "%d%s", &size, &unit)
+	_, _ = fmt.Sscanf(mem, "%d%s", &size, &unit)
 
 	switch unit {
 	case "GB", "G":

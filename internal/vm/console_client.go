@@ -147,7 +147,7 @@ func (c *ConsoleClient) Attach(stdin io.Reader, stdout io.Writer) error {
 			return fmt.Errorf("failed to set raw mode: %w", err)
 		}
 		// Restore terminal on exit
-		defer term.Restore(stdinFd, oldState)
+		defer func() { _ = term.Restore(stdinFd, oldState) }()
 	}
 
 	// Start terminal resize handler to propagate SIGWINCH to guest
@@ -158,7 +158,7 @@ func (c *ConsoleClient) Attach(stdin io.Reader, stdout io.Writer) error {
 			for range sigwinch {
 				w, h, err := term.GetSize(stdinFd)
 				if err == nil && w > 0 && h > 0 {
-					os.WriteFile(c.termsizePath, []byte(fmt.Sprintf("%d %d", w, h)), 0644)
+					_ = os.WriteFile(c.termsizePath, []byte(fmt.Sprintf("%d %d", w, h)), 0644)
 				}
 			}
 		}()
@@ -167,10 +167,10 @@ func (c *ConsoleClient) Attach(stdin io.Reader, stdout io.Writer) error {
 
 	// Check for immediate error response from proxy (e.g., "already attached")
 	// Set short deadline for initial check
-	c.conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	_ = c.conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 	initialBuf := make([]byte, 64)
 	n, err := c.conn.Read(initialBuf)
-	c.conn.SetReadDeadline(time.Time{}) // Clear deadline
+	_ = c.conn.SetReadDeadline(time.Time{}) // Clear deadline
 
 	if n > 0 {
 		msg := string(initialBuf[:n])
@@ -178,7 +178,7 @@ func (c *ConsoleClient) Attach(stdin io.Reader, stdout io.Writer) error {
 			return fmt.Errorf("%s", strings.TrimSpace(msg))
 		}
 		// Not an error - it's VM output, write it through
-		stdout.Write(initialBuf[:n])
+		_, _ = stdout.Write(initialBuf[:n])
 	}
 	// If err is timeout, that's expected - no immediate data, proceed normally
 	if err != nil && !os.IsTimeout(err) && err != io.EOF {

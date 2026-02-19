@@ -44,7 +44,7 @@ func NewConsoleProxyServer(sessionID string, console *Console) (*ConsoleProxySer
 	socketPath := filepath.Join(socketDir, fmt.Sprintf("%s.sock", sessionID))
 
 	// Remove existing socket file if present
-	os.Remove(socketPath)
+	_ = os.Remove(socketPath)
 
 	return &ConsoleProxyServer{
 		socketPath: socketPath,
@@ -140,8 +140,8 @@ func (s *ConsoleProxyServer) acceptLoop() {
 		s.clientMu.Lock()
 		if s.currentClient != nil {
 			// Reject the connection - already have an active client
-			conn.Write([]byte("ERROR: session already attached\n"))
-			conn.Close()
+			_, _ = conn.Write([]byte("ERROR: session already attached\n"))
+			_ = conn.Close()
 			s.clientMu.Unlock()
 			debugLog("Rejected connection - session already attached")
 			continue
@@ -171,7 +171,7 @@ func (s *ConsoleProxyServer) handleClientInput(conn net.Conn) {
 		}
 		s.clientMu.Unlock()
 
-		conn.Close()
+		_ = conn.Close()
 		debugLog("Client disconnected from console proxy")
 	}()
 
@@ -194,7 +194,7 @@ func (s *ConsoleProxyServer) monitorConsoleEOF() {
 	<-s.console.done
 
 	debugLog("Console EOF detected - shutting down proxy")
-	s.Stop()
+	_ = s.Stop()
 }
 
 // Stop closes all connections and removes the socket file
@@ -214,13 +214,13 @@ func (s *ConsoleProxyServer) Stop() error {
 
 	// Close listener
 	if s.listener != nil {
-		s.listener.Close()
+		_ = s.listener.Close()
 	}
 
 	// Close current client if any
 	s.clientMu.Lock()
 	if s.currentClient != nil {
-		s.currentClient.Close()
+		_ = s.currentClient.Close()
 		s.currentClient = nil
 	}
 	s.clientMu.Unlock()
