@@ -109,12 +109,19 @@ func (e *EscapeWriter) DetachChan() chan struct{} {
 type ConsoleClient struct {
 	conn         net.Conn
 	termsizePath string
+	clipboardDir string
 }
 
 // SetTermsizePath sets the path to the termsize file used for propagating
 // terminal resize events to the VM guest via VirtioFS.
 func (c *ConsoleClient) SetTermsizePath(path string) {
 	c.termsizePath = path
+}
+
+// SetClipboardDir sets the path to the clipboard directory used for syncing
+// host clipboard contents to the VM guest via VirtioFS.
+func (c *ConsoleClient) SetClipboardDir(path string) {
+	c.clipboardDir = path
 }
 
 // NewConsoleClient connects to a VM console Unix socket
@@ -190,9 +197,13 @@ func (c *ConsoleClient) Attach(stdin io.Reader, stdout io.Writer) error {
 		errCh <- err
 	}()
 
-	// Copy from stdin to socket (host -> VM) with escape detection
+	// Copy from stdin to socket (host -> VM) with clipboard sync and escape detection
 	go func() {
-		_, err := io.Copy(escapeWriter, stdin)
+		var stdinWriter io.Writer = escapeWriter
+		if c.clipboardDir != "" {
+			stdinWriter = NewClipboardWriter(escapeWriter, c.clipboardDir)
+		}
+		_, err := io.Copy(stdinWriter, stdin)
 		errCh <- err
 	}()
 
