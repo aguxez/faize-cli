@@ -41,6 +41,7 @@ type Claude struct {
 	AutoMounts         []string `mapstructure:"auto_mounts"`
 	PersistCredentials *bool    `mapstructure:"persist_credentials"`
 	ExtraDeps          []string `mapstructure:"extra_deps"`
+	GitContext         *bool    `mapstructure:"git_context"`
 }
 
 // ShouldPersistCredentials returns whether credential persistence is enabled.
@@ -50,6 +51,15 @@ func (c *Claude) ShouldPersistCredentials() bool {
 		return false
 	}
 	return *c.PersistCredentials
+}
+
+// ShouldMountGitContext returns whether automatic .git directory mounting is enabled.
+// Defaults to true when not explicitly set.
+func (c *Claude) ShouldMountGitContext() bool {
+	if c.GitContext == nil {
+		return true
+	}
+	return *c.GitContext
 }
 
 // Load loads the configuration from ~/.faize/config.yaml or returns defaults
@@ -141,6 +151,7 @@ func setDefaults() {
 	viper.SetDefault("claude.auto_mounts", []string{})
 	viper.SetDefault("claude.persist_credentials", false)
 	viper.SetDefault("claude.extra_deps", []string{})
+	viper.SetDefault("claude.git_context", true)
 }
 
 // expandPaths expands ~ in paths to home directory
