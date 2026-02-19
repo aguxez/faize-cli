@@ -37,7 +37,7 @@ func NewConsoleProxyServer(sessionID string, console *Console) (*ConsoleProxySer
 	}
 
 	socketDir := filepath.Join(homeDir, ".faize", "sessions")
-	if err := os.MkdirAll(socketDir, 0755); err != nil {
+	if err := os.MkdirAll(socketDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create socket directory: %w", err)
 	}
 

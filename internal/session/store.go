@@ -22,7 +22,7 @@ func NewStore() (*Store, error) {
 	}
 
 	dir := filepath.Join(home, ".faize", "sessions")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create sessions directory: %w", err)
 	}
 
@@ -38,15 +38,28 @@ func (s *Store) Save(session *Session) error {
 		return fmt.Errorf("failed to marshal session: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		return fmt.Errorf("failed to write session file: %w", err)
 	}
 
 	return nil
 }
 
+// validateSessionID checks that a session ID contains only safe characters (hex digits and hyphens).
+func validateSessionID(id string) error {
+	for _, c := range id {
+		if !((c >= 'a' && c <= 'f') || (c >= '0' && c <= '9') || c == '-') {
+			return fmt.Errorf("invalid session ID: %s", id)
+		}
+	}
+	return nil
+}
+
 // Load reads a session from disk by ID
 func (s *Store) Load(id string) (*Session, error) {
+	if err := validateSessionID(id); err != nil {
+		return nil, err
+	}
 	path := filepath.Join(s.dir, id+".json")
 
 	data, err := os.ReadFile(path)
@@ -94,6 +107,9 @@ func (s *Store) List() ([]*Session, error) {
 
 // Delete removes a session file
 func (s *Store) Delete(id string) error {
+	if err := validateSessionID(id); err != nil {
+		return err
+	}
 	path := filepath.Join(s.dir, id+".json")
 
 	if err := os.Remove(path); err != nil {
