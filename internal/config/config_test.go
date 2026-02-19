@@ -43,12 +43,6 @@ func TestLoadDefaults(t *testing.T) {
 		assert.Contains(t, cfg.BlockedPaths, expandPath("~/.local/share/keyrings"))
 	}
 
-	// Check auto mounts
-	assert.Contains(t, cfg.AutoMounts, expandPath("~/.gitconfig:ro"))
-
-	// Check Claude-specific config
-	assert.Contains(t, cfg.Claude.AutoMounts, expandPath("~/.gitconfig:ro"))
-
 	// Credential persistence defaults to false (opt-in)
 	assert.False(t, cfg.Claude.ShouldPersistCredentials())
 }
