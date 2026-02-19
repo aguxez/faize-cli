@@ -13,7 +13,7 @@ type VZManager struct{}
 
 // NewVZManager returns an error on non-macOS platforms
 func NewVZManager() (*VZManager, error) {
-	return nil, fmt.Errorf("Virtualization.framework is only available on macOS")
+	return nil, fmt.Errorf("virtualization.framework is only available on macOS")
 }
 
 // Create is not implemented on non-macOS

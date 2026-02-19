@@ -59,7 +59,7 @@ func init() {
 func runStart(cmd *cobra.Command, args []string) error {
 	// Set debug env var for subpackages
 	if debug {
-		os.Setenv("FAIZE_DEBUG", "1")
+		_ = os.Setenv("FAIZE_DEBUG", "1")
 	}
 
 	// Default project directory to current working directory

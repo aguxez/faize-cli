@@ -1,8 +1,6 @@
 package artifacts
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"fmt"
 	"io"
 	"net/http"
@@ -131,7 +129,7 @@ func (m *Manager) download(url, destPath, name string) error {
 	if err != nil {
 		return fmt.Errorf("failed to download %s: %w", name, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to download %s: HTTP %d", name, resp.StatusCode)
@@ -147,15 +145,15 @@ func (m *Manager) download(url, destPath, name string) error {
 	// Copy with progress
 	written, err := io.Copy(file, resp.Body)
 	if err != nil {
-		file.Close()
-		os.Remove(tmpPath)
+		_ = file.Close()
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to write %s: %w", name, err)
 	}
-	file.Close()
+	_ = file.Close()
 
 	// Rename to final path (atomic)
 	if err := os.Rename(tmpPath, destPath); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to finalize %s: %w", name, err)
 	}
 
@@ -169,30 +167,6 @@ func (m *Manager) Clean() error {
 		return fmt.Errorf("failed to clean artifacts: %w", err)
 	}
 	return os.MkdirAll(m.dir, 0755)
-}
-
-// decompressGzip decompresses a gzipped file
-func (m *Manager) decompressGzip(src, dst string) error {
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-
-	gzReader, err := gzip.NewReader(srcFile)
-	if err != nil {
-		return err
-	}
-	defer gzReader.Close()
-
-	dstFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer dstFile.Close()
-
-	_, err = io.Copy(dstFile, gzReader)
-	return err
 }
 
 // buildKernel builds the kernel using scripts/build-kernel.sh
@@ -253,80 +227,6 @@ func (m *Manager) findKernelBuildScript() (string, error) {
 	}
 
 	return "", fmt.Errorf("build-kernel.sh not found in expected locations")
-}
-
-// extractKernelFromTarGz extracts the kernel "Image.gz" file from a tar.gz archive and decompresses it
-// Deprecated: Kept for backwards compatibility but no longer used (puipui-linux replaced with Alpine)
-func (m *Manager) extractKernelFromTarGz(src, dst string) error {
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-
-	gzReader, err := gzip.NewReader(srcFile)
-	if err != nil {
-		return err
-	}
-	defer gzReader.Close()
-
-	tarReader := tar.NewReader(gzReader)
-
-	for {
-		header, err := tarReader.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		// Look for the kernel image file (Image or Image.gz)
-		name := header.Name
-		baseName := filepath.Base(name)
-
-		if strings.EqualFold(baseName, "Image") {
-			// Uncompressed kernel
-			dstFile, err := os.Create(dst)
-			if err != nil {
-				return err
-			}
-			defer dstFile.Close()
-
-			_, err = io.Copy(dstFile, tarReader)
-			if err != nil {
-				return err
-			}
-
-			fmt.Printf("Extracted kernel from %s\n", name)
-			return nil
-		}
-
-		if strings.EqualFold(baseName, "Image.gz") {
-			// Gzipped kernel - need to decompress
-			imgGzReader, err := gzip.NewReader(tarReader)
-			if err != nil {
-				return fmt.Errorf("failed to create gzip reader for Image.gz: %w", err)
-			}
-			defer imgGzReader.Close()
-
-			dstFile, err := os.Create(dst)
-			if err != nil {
-				return err
-			}
-			defer dstFile.Close()
-
-			_, err = io.Copy(dstFile, imgGzReader)
-			if err != nil {
-				return err
-			}
-
-			fmt.Printf("Extracted and decompressed kernel from %s\n", name)
-			return nil
-		}
-	}
-
-	return fmt.Errorf("kernel Image not found in archive")
 }
 
 // BuildRootfs builds the rootfs locally using build-rootfs.sh script

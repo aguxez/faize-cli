@@ -33,7 +33,7 @@ func GenerateInitScript(mounts []session.VMMount, workDir string) string {
 		}
 
 		// Create mount point
-		sb.WriteString(fmt.Sprintf("mkdir -p %s\n", shellQuote(mount.Target)))
+		fmt.Fprintf(&sb, "mkdir -p %s\n", shellQuote(mount.Target))
 
 		// Mount options
 		opts := "rw"
@@ -41,7 +41,7 @@ func GenerateInitScript(mounts []session.VMMount, workDir string) string {
 			opts = "ro"
 		}
 
-		sb.WriteString(fmt.Sprintf("mount -t virtiofs %s %s -o %s\n", shellQuote(tag), shellQuote(mount.Target), opts))
+		fmt.Fprintf(&sb, "mount -t virtiofs %s %s -o %s\n", shellQuote(tag), shellQuote(mount.Target), opts)
 	}
 
 	sb.WriteString("\n")
@@ -55,8 +55,8 @@ func GenerateInitScript(mounts []session.VMMount, workDir string) string {
 
 	// Change to working directory
 	if workDir != "" {
-		sb.WriteString(fmt.Sprintf("# Change to project directory\n"))
-		sb.WriteString(fmt.Sprintf("cd %s\n\n", shellQuote(workDir)))
+		sb.WriteString("# Change to project directory\n")
+		fmt.Fprintf(&sb, "cd %s\n\n", shellQuote(workDir))
 	}
 
 	// Start shell
@@ -79,14 +79,14 @@ func GenerateRCLocal(mounts []session.VMMount) string {
 			tag = fmt.Sprintf("mount%d", i)
 		}
 
-		sb.WriteString(fmt.Sprintf("mkdir -p %s\n", shellQuote(mount.Target)))
+		fmt.Fprintf(&sb, "mkdir -p %s\n", shellQuote(mount.Target))
 
 		opts := "rw"
 		if mount.ReadOnly {
 			opts = "ro"
 		}
 
-		sb.WriteString(fmt.Sprintf("mount -t virtiofs %s %s -o %s || true\n", shellQuote(tag), shellQuote(mount.Target), opts))
+		fmt.Fprintf(&sb, "mount -t virtiofs %s %s -o %s || true\n", shellQuote(tag), shellQuote(mount.Target), opts)
 	}
 
 	sb.WriteString("\nexit 0\n")
@@ -148,12 +148,12 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 		if tag == "" {
 			tag = fmt.Sprintf("mount%d", i)
 		}
-		sb.WriteString(fmt.Sprintf("mkdir -p %s\n", shellQuote(mount.Target)))
+		fmt.Fprintf(&sb, "mkdir -p %s\n", shellQuote(mount.Target))
 		opts := "rw"
 		if mount.ReadOnly {
 			opts = "ro"
 		}
-		sb.WriteString(fmt.Sprintf("mount -t virtiofs %s %s -o %s\n", shellQuote(tag), shellQuote(mount.Target), opts))
+		fmt.Fprintf(&sb, "mount -t virtiofs %s %s -o %s\n", shellQuote(tag), shellQuote(mount.Target), opts)
 	}
 	sb.WriteString("\n")
 

@@ -238,7 +238,7 @@ func TestValidateSymlinkBypass(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create a "blocked" directory to simulate a protected path
 	blockedDir := filepath.Join(tmpDir, "blocked-secrets")
