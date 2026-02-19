@@ -134,9 +134,10 @@ func setDefaults() {
 	}
 
 	// Add platform-specific blocked paths
-	if runtime.GOOS == "darwin" {
+	switch runtime.GOOS {
+	case "darwin":
 		blockedPaths = append(blockedPaths, "~/Library/Keychains")
-	} else if runtime.GOOS == "linux" {
+	case "linux":
 		blockedPaths = append(blockedPaths, "~/.local/share/keyrings")
 	}
 

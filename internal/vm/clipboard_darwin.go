@@ -23,7 +23,7 @@ func SyncClipboardToDir(dir string) error {
 	}
 
 	// Remove stale image file before sync so the VM can't serve old data
-	os.Remove(filepath.Join(dir, "clipboard-image"))
+	_ = os.Remove(filepath.Join(dir, "clipboard-image"))
 
 	hasImage := syncClipboardImage(dir)
 	hasText := syncClipboardText(dir)
@@ -70,7 +70,7 @@ return "/tmp/faize_clipboard.tiff"
 	if err := cmd.Run(); err != nil {
 		return false
 	}
-	defer os.Remove(tempTiff)
+	defer func() { _ = os.Remove(tempTiff) }()
 
 	// Convert TIFF to PNG using sips (built into macOS)
 	sipsCmd := exec.Command("sips", "-s", "format", "png", tempTiff, "--out", imgPath)

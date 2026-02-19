@@ -47,12 +47,12 @@ func runPs(cmd *cobra.Command, args []string) error {
 
 	// Create tabwriter for aligned output
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tPROJECT\tSTATUS\tSTARTED")
-	fmt.Fprintln(w, "--\t-------\t------\t-------")
+	_, _ = fmt.Fprintln(w, "ID\tPROJECT\tSTATUS\tSTARTED")
+	_, _ = fmt.Fprintln(w, "--\t-------\t------\t-------")
 
 	for _, session := range sessions {
 		started := session.StartedAt.Format("2006-01-02 15:04:05")
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 			session.ID,
 			session.ProjectDir,
 			session.Status,
@@ -60,6 +60,6 @@ func runPs(cmd *cobra.Command, args []string) error {
 		)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 	return nil
 }

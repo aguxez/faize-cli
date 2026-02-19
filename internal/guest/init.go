@@ -33,7 +33,7 @@ func GenerateInitScript(mounts []session.VMMount, workDir string) string {
 		}
 
 		// Create mount point
-		sb.WriteString(fmt.Sprintf("mkdir -p %s\n", shellQuote(mount.Target)))
+		fmt.Fprintf(&sb, "mkdir -p %s\n", shellQuote(mount.Target))
 
 		// Mount options
 		opts := "rw"
@@ -41,7 +41,7 @@ func GenerateInitScript(mounts []session.VMMount, workDir string) string {
 			opts = "ro"
 		}
 
-		sb.WriteString(fmt.Sprintf("mount -t virtiofs %s %s -o %s\n", shellQuote(tag), shellQuote(mount.Target), opts))
+		fmt.Fprintf(&sb, "mount -t virtiofs %s %s -o %s\n", shellQuote(tag), shellQuote(mount.Target), opts)
 	}
 
 	sb.WriteString("\n")
@@ -55,8 +55,8 @@ func GenerateInitScript(mounts []session.VMMount, workDir string) string {
 
 	// Change to working directory
 	if workDir != "" {
-		sb.WriteString(fmt.Sprintf("# Change to project directory\n"))
-		sb.WriteString(fmt.Sprintf("cd %s\n\n", shellQuote(workDir)))
+		sb.WriteString("# Change to project directory\n")
+		fmt.Fprintf(&sb, "cd %s\n\n", shellQuote(workDir))
 	}
 
 	// Start shell
@@ -79,14 +79,14 @@ func GenerateRCLocal(mounts []session.VMMount) string {
 			tag = fmt.Sprintf("mount%d", i)
 		}
 
-		sb.WriteString(fmt.Sprintf("mkdir -p %s\n", shellQuote(mount.Target)))
+		fmt.Fprintf(&sb, "mkdir -p %s\n", shellQuote(mount.Target))
 
 		opts := "rw"
 		if mount.ReadOnly {
 			opts = "ro"
 		}
 
-		sb.WriteString(fmt.Sprintf("mount -t virtiofs %s %s -o %s || true\n", shellQuote(tag), shellQuote(mount.Target), opts))
+		fmt.Fprintf(&sb, "mount -t virtiofs %s %s -o %s || true\n", shellQuote(tag), shellQuote(mount.Target), opts)
 	}
 
 	sb.WriteString("\nexit 0\n")
@@ -148,12 +148,12 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 		if tag == "" {
 			tag = fmt.Sprintf("mount%d", i)
 		}
-		sb.WriteString(fmt.Sprintf("mkdir -p %s\n", shellQuote(mount.Target)))
+		fmt.Fprintf(&sb, "mkdir -p %s\n", shellQuote(mount.Target))
 		opts := "rw"
 		if mount.ReadOnly {
 			opts = "ro"
 		}
-		sb.WriteString(fmt.Sprintf("mount -t virtiofs %s %s -o %s\n", shellQuote(tag), shellQuote(mount.Target), opts))
+		fmt.Fprintf(&sb, "mount -t virtiofs %s %s -o %s\n", shellQuote(tag), shellQuote(mount.Target), opts)
 	}
 	sb.WriteString("\n")
 
@@ -257,7 +257,7 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 			sb.WriteString("iptables -A OUTPUT -p tcp -d 1.1.1.1 --dport 53 -j ACCEPT\n\n")
 			sb.WriteString("# Resolve and allow specific domains\n")
 			domainsStr := strings.Join(policy.Domains, " ")
-			sb.WriteString(fmt.Sprintf("ALLOWED_DOMAINS=%s\n", shellQuote(domainsStr)))
+			fmt.Fprintf(&sb, "ALLOWED_DOMAINS=%s\n", shellQuote(domainsStr))
 			sb.WriteString("\n")
 			sb.WriteString("# FAIZE_DEBUG already set at top of script\n")
 			sb.WriteString("for domain in $ALLOWED_DOMAINS; do\n")
@@ -287,7 +287,7 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("chown -R claude:claude /home/claude 2>/dev/null || true\n")
 	sb.WriteString("chown -R claude:claude /opt/toolchain 2>/dev/null || true\n")
 	if projectDir != "" {
-		sb.WriteString(fmt.Sprintf("chown -R claude:claude %s 2>/dev/null || true\n", shellQuote(projectDir)))
+		fmt.Fprintf(&sb, "chown -R claude:claude %s 2>/dev/null || true\n", shellQuote(projectDir))
 	}
 	sb.WriteString("\n")
 
@@ -296,7 +296,7 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	if safeDir == "" {
 		safeDir = "/workspace"
 	}
-	sb.WriteString(fmt.Sprintf("git config --system --add safe.directory %s\n\n", shellQuote(safeDir)))
+	fmt.Fprintf(&sb, "git config --system --add safe.directory %s\n\n", shellQuote(safeDir))
 
 	// Install clipboard bridge shims (xclip/xsel)
 	// These scripts read clipboard data from VirtioFS, synced by the host on Ctrl+V
@@ -374,8 +374,8 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("# Symlink read-only Claude configuration files\n")
 	readOnlyFiles := []string{"CLAUDE.md", "keybindings.json"}
 	for _, file := range readOnlyFiles {
-		sb.WriteString(fmt.Sprintf("if [ -e /mnt/host-claude/%s ]; then\n", file))
-		sb.WriteString(fmt.Sprintf("  ln -sf /mnt/host-claude/%s /home/claude/.claude/%s\n", file, file))
+		fmt.Fprintf(&sb, "if [ -e /mnt/host-claude/%s ]; then\n", file)
+		fmt.Fprintf(&sb, "  ln -sf /mnt/host-claude/%s /home/claude/.claude/%s\n", file, file)
 		sb.WriteString("fi\n")
 	}
 	sb.WriteString("\n")
@@ -391,11 +391,11 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("# Create writable directories with host content\n")
 	writableDirs := []string{"skills", "plugins"}
 	for _, dir := range writableDirs {
-		sb.WriteString(fmt.Sprintf("mkdir -p /home/claude/.claude/%s\n", dir))
-		sb.WriteString(fmt.Sprintf("if [ -d /mnt/host-claude/%s ]; then\n", dir))
-		sb.WriteString(fmt.Sprintf("  cp -r /mnt/host-claude/%s/. /home/claude/.claude/%s/ 2>/dev/null || true\n", dir, dir))
+		fmt.Fprintf(&sb, "mkdir -p /home/claude/.claude/%s\n", dir)
+		fmt.Fprintf(&sb, "if [ -d /mnt/host-claude/%s ]; then\n", dir)
+		fmt.Fprintf(&sb, "  cp -r /mnt/host-claude/%s/. /home/claude/.claude/%s/ 2>/dev/null || true\n", dir, dir)
 		sb.WriteString("fi\n")
-		sb.WriteString(fmt.Sprintf("chown -R claude:claude /home/claude/.claude/%s\n", dir))
+		fmt.Fprintf(&sb, "chown -R claude:claude /home/claude/.claude/%s\n", dir)
 	}
 	sb.WriteString("\n")
 
@@ -438,7 +438,7 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	}
 	sb.WriteString("# Rewrite projectPath to VM workspace\n")
 	sb.WriteString("if [ -f /home/claude/.claude/plugins/installed_plugins.json ]; then\n")
-	sb.WriteString(fmt.Sprintf("  sed -i 's|\"projectPath\": \"[^\"]*\"|\"projectPath\": \"%s\"|g' /home/claude/.claude/plugins/installed_plugins.json\n", strings.ReplaceAll(vmWorkspace, "'", "")))
+	fmt.Fprintf(&sb, "  sed -i 's|\"projectPath\": \"[^\"]*\"|\"projectPath\": \"%s\"|g' /home/claude/.claude/plugins/installed_plugins.json\n", strings.ReplaceAll(vmWorkspace, "'", ""))
 	sb.WriteString("fi\n")
 
 	// Verify the rewrite worked (debug only)
@@ -450,7 +450,7 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 
 	// Change to project directory
 	if projectDir != "" {
-		sb.WriteString(fmt.Sprintf("cd %s\n\n", shellQuote(projectDir)))
+		fmt.Fprintf(&sb, "cd %s\n\n", shellQuote(projectDir))
 	} else {
 		sb.WriteString("cd /workspace\n\n")
 	}
@@ -518,7 +518,7 @@ func DefaultShellRC(workDir string) string {
 	sb.WriteString("export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\n")
 
 	if workDir != "" {
-		sb.WriteString(fmt.Sprintf("cd %s 2>/dev/null || true\n", shellQuote(workDir)))
+		fmt.Fprintf(&sb, "cd %s 2>/dev/null || true\n", shellQuote(workDir))
 	}
 
 	return sb.String()

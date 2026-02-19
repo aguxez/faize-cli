@@ -33,28 +33,28 @@ func createConsole() (*Console, *vz.VirtioConsoleDeviceSerialPortConfiguration, 
 	// We write to writePipe, guest reads from it
 	guestRead, writePipe, err := os.Pipe()
 	if err != nil {
-		readPipe.Close()
-		guestWrite.Close()
+		_ = readPipe.Close()
+		_ = guestWrite.Close()
 		return nil, nil, err
 	}
 
 	// Create file handle attachment
 	attachment, err := vz.NewFileHandleSerialPortAttachment(guestRead, guestWrite)
 	if err != nil {
-		readPipe.Close()
-		guestWrite.Close()
-		guestRead.Close()
-		writePipe.Close()
+		_ = readPipe.Close()
+		_ = guestWrite.Close()
+		_ = guestRead.Close()
+		_ = writePipe.Close()
 		return nil, nil, err
 	}
 
 	// Create serial port configuration
 	serialConfig, err := vz.NewVirtioConsoleDeviceSerialPortConfiguration(attachment)
 	if err != nil {
-		readPipe.Close()
-		guestWrite.Close()
-		guestRead.Close()
-		writePipe.Close()
+		_ = readPipe.Close()
+		_ = guestWrite.Close()
+		_ = guestRead.Close()
+		_ = writePipe.Close()
 		return nil, nil, err
 	}
 
@@ -81,7 +81,7 @@ func (c *Console) Attach(stdin io.Reader, stdout io.Writer) error {
 			return fmt.Errorf("failed to set raw mode: %w", err)
 		}
 		// Restore terminal on exit
-		defer term.Restore(stdinFd, oldState)
+		defer func() { _ = term.Restore(stdinFd, oldState) }()
 	}
 
 	// Create EscapeWriter for detecting user escape sequences
@@ -124,8 +124,8 @@ func (c *Console) Detach() error {
 	c.closed = true
 
 	close(c.done)
-	c.read.Close()
-	c.write.Close()
+	_ = c.read.Close()
+	_ = c.write.Close()
 
 	return nil
 }

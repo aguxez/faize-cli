@@ -37,9 +37,10 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Contains(t, cfg.BlockedPaths, expandPath("~/.docker/config.json"))
 
 	// Platform-specific blocked paths
-	if runtime.GOOS == "darwin" {
+	switch runtime.GOOS {
+	case "darwin":
 		assert.Contains(t, cfg.BlockedPaths, expandPath("~/Library/Keychains"))
-	} else if runtime.GOOS == "linux" {
+	case "linux":
 		assert.Contains(t, cfg.BlockedPaths, expandPath("~/.local/share/keyrings"))
 	}
 

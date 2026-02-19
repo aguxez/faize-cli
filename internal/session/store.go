@@ -48,7 +48,7 @@ func (s *Store) Save(session *Session) error {
 // validateSessionID checks that a session ID contains only safe characters (hex digits and hyphens).
 func validateSessionID(id string) error {
 	for _, c := range id {
-		if !((c >= 'a' && c <= 'f') || (c >= '0' && c <= '9') || c == '-') {
+		if (c < 'a' || c > 'f') && (c < '0' || c > '9') && c != '-' {
 			return fmt.Errorf("invalid session ID: %s", id)
 		}
 	}

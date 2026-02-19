@@ -71,11 +71,12 @@ func Parse(spec string) (*Mount, error) {
 		}
 		mount.Target = targetPath
 
-		if parts[2] == "ro" {
+		switch parts[2] {
+		case "ro":
 			mount.ReadOnly = true
-		} else if parts[2] == "rw" {
+		case "rw":
 			mount.ReadOnly = false
-		} else {
+		default:
 			return nil, fmt.Errorf("invalid mode '%s': must be 'ro' or 'rw'", parts[2])
 		}
 	default:
