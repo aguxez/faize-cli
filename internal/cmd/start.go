@@ -18,17 +18,15 @@ import (
 )
 
 var (
-	startProjectDir        string
-	startMounts            []string
-	startCPUs              int
-	startMemory            string
-	startTimeout           string
-	startDebug             bool
-	startPersistCreds      bool
-	startNoGitContext      bool
+	startProjectDir   string
+	startMounts       []string
+	startTimeout      string
+	startPersistCreds bool
+	startNoGitContext bool
+	startClaude           bool
 )
 
-var claudeStartCmd = &cobra.Command{
+var startCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start a new Claude Code session",
 	Long: `Start a new Claude Code VM session.
@@ -41,31 +39,27 @@ This command automatically:
   - Configures network access for Claude-specific domains
 
 Examples:
-  faize claude start                              # uses current directory
-  faize claude start --project ~/code/myapp
-  faize claude start -p ~/code/myapp --cpus 4 --memory 8GB`,
-	RunE: runClaudeStart,
+  faize start                              # uses current directory
+  faize start --project ~/code/myapp
+  faize start -p ~/code/myapp`,
+	RunE: runStart,
 }
 
 func init() {
-	claudeStartCmd.Flags().StringVarP(&startProjectDir, "project", "p", "", "project directory to mount (default: current directory)")
+	startCmd.Flags().StringVarP(&startProjectDir, "project", "p", "", "project directory to mount (default: current directory)")
+	startCmd.Flags().StringArrayVarP(&startMounts, "mount", "m", []string{}, "additional mount paths (repeatable)")
+	startCmd.Flags().StringVarP(&startTimeout, "timeout", "t", "", "session timeout (e.g., 2h)")
+	startCmd.Flags().BoolVar(&startPersistCreds, "persist-credentials", false, "persist Claude credentials across sessions")
+	startCmd.Flags().BoolVar(&startNoGitContext, "no-git-context", false, "disable automatic .git directory mounting from git root")
+	startCmd.Flags().BoolVar(&startClaude, "claude", true, "use Claude Code mode")
 
-	claudeStartCmd.Flags().StringArrayVarP(&startMounts, "mount", "m", []string{}, "additional mount paths (repeatable)")
-	claudeStartCmd.Flags().IntVar(&startCPUs, "cpus", 0, "number of CPUs (default from config)")
-	claudeStartCmd.Flags().StringVar(&startMemory, "memory", "", "memory limit (e.g., 4GB)")
-	claudeStartCmd.Flags().StringVarP(&startTimeout, "timeout", "t", "", "session timeout (e.g., 2h)")
-	claudeStartCmd.Flags().BoolVar(&startDebug, "debug", false, "enable debug logging")
-	claudeStartCmd.Flags().BoolVar(&startPersistCreds, "persist-credentials", false, "persist Claude credentials across sessions")
-	claudeStartCmd.Flags().BoolVar(&startNoGitContext, "no-git-context", false, "disable automatic .git directory mounting from git root")
-
-	claudeCmd.AddCommand(claudeStartCmd)
+	rootCmd.AddCommand(startCmd)
 }
 
-func runClaudeStart(cmd *cobra.Command, args []string) error {
+func runStart(cmd *cobra.Command, args []string) error {
 	// Set debug env var for subpackages
-	if startDebug {
+	if debug {
 		os.Setenv("FAIZE_DEBUG", "1")
-		debug = true
 	}
 
 	// Default project directory to current working directory
@@ -114,13 +108,10 @@ func runClaudeStart(cmd *cobra.Command, args []string) error {
 		// No need to pre-create empty files - copy logic handles missing files gracefully
 	}
 
-	// Apply defaults from config if not specified
-	if startCPUs == 0 {
-		startCPUs = cfg.Defaults.CPUs
-	}
-	if startMemory == "" {
-		startMemory = cfg.Defaults.Memory
-	}
+	// Read CPUs and memory directly from config
+	cpus := cfg.Defaults.CPUs
+	memory := cfg.Defaults.Memory
+
 	if startTimeout == "" {
 		startTimeout = cfg.Defaults.Timeout
 	}
@@ -204,13 +195,13 @@ func runClaudeStart(cmd *cobra.Command, args []string) error {
 
 	// Create VM configuration
 	vmConfig := &vm.Config{
-		ProjectDir:    projectMount.Source,
-		Mounts:        parsedMounts,
-		Network:       claudeNetworks,
-		NetworkPolicy: policy,
-		CPUs:          startCPUs,
-		Memory:        startMemory,
-		Timeout:       timeoutDuration,
+		ProjectDir:     projectMount.Source,
+		Mounts:         parsedMounts,
+		Network:        claudeNetworks,
+		NetworkPolicy:  policy,
+		CPUs:           cpus,
+		Memory:         memory,
+		Timeout:        timeoutDuration,
 		ClaudeMode:     true,
 		HostClaudeDir:  claudeDir,
 		ToolchainDir:   toolchainDir,

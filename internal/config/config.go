@@ -25,7 +25,6 @@ type Config struct {
 	Defaults     Defaults `mapstructure:"defaults"`
 	Networks     []string `mapstructure:"networks"`
 	BlockedPaths []string `mapstructure:"blocked_paths"`
-	AutoMounts   []string `mapstructure:"auto_mounts"`
 	Claude       Claude   `mapstructure:"claude"`
 }
 
@@ -96,7 +95,6 @@ func Load() (*Config, error) {
 
 	// Expand ~ in paths
 	cfg.BlockedPaths = expandPaths(cfg.BlockedPaths)
-	cfg.AutoMounts = expandPaths(cfg.AutoMounts)
 	cfg.Claude.AutoMounts = expandPaths(cfg.Claude.AutoMounts)
 
 	// Merge hardcoded blocked paths (security-critical, cannot be overridden)
@@ -143,9 +141,6 @@ func setDefaults() {
 	}
 
 	viper.SetDefault("blocked_paths", blockedPaths)
-
-	// Auto mounts (convenience) - NOTE: VirtioFS only supports directories, not files
-	viper.SetDefault("auto_mounts", []string{})
 
 	// Claude-specific defaults
 	viper.SetDefault("claude.auto_mounts", []string{})

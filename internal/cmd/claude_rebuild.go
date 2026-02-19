@@ -29,7 +29,7 @@ After updating extra_deps, run this command to rebuild the rootfs:
   faize claude rebuild
 
 Then start a new session:
-  faize claude start`,
+  faize start`,
 	RunE: runClaudeRebuild,
 }
 
@@ -66,7 +66,7 @@ func runClaudeRebuild(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("\nRootfs rebuilt successfully!")
-	fmt.Println("Start a new session with: faize claude start")
+	fmt.Println("Start a new session with: faize start")
 
 	return nil
 }
