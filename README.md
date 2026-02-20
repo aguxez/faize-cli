@@ -12,13 +12,15 @@ Faize is a CLI that creates isolated, reproducible virtual machines for running 
 - **Clipboard bridge** — Syncs the host clipboard into the VM on Ctrl+V for text and image paste support
 - **Session management** — List, stop, and clean up VM sessions from the CLI
 
-## Requirements
+## Setup
+
+### Requirements
 
 - macOS with Virtualization.framework support
 - Go 1.24+
-- Docker (for building rootfs images)
+- Docker (for building the kernel and rootfs images)
 
-## Installation
+### Building the CLI
 
 ```bash
 # Build and code-sign (macOS)
@@ -29,6 +31,56 @@ make build-unsigned
 
 # Install to $GOPATH/bin (or ~/go/bin)
 make install
+```
+
+### Building the Kernel
+
+Faize runs VMs with a custom ARM64 Linux kernel that includes virtio support for Apple's Virtualization.framework. The kernel is downloaded automatically from GitHub releases on first run, but you can build it manually:
+
+```bash
+# Build the kernel (uses Docker on macOS for cross-compilation)
+./scripts/build-kernel.sh
+
+# Specify a kernel version and output path
+./scripts/build-kernel.sh 6.6.10 /tmp/kernel-build ~/.faize/artifacts/vmlinux
+```
+
+The script downloads the Linux kernel source, applies a minimal ARM64 config (`scripts/kernel-config-arm64-minimal`), and produces an uncompressed `Image` file. On macOS, the build runs inside a Docker container with the required cross-compilation toolchain.
+
+### Building the Claude Rootfs Image
+
+The Claude rootfs is a 1024MB Alpine-based ext4 image that ships with bash, git, python3, Node.js, and the Claude Code CLI pre-installed. Like the kernel, it is built automatically on first run if not available from GitHub releases, but you can build it manually:
+
+```bash
+# Build the Claude rootfs image
+./scripts/build-claude-rootfs.sh
+
+# Build with extra Alpine packages baked in
+EXTRA_DEPS="ripgrep python3-dev" ./scripts/build-claude-rootfs.sh
+
+# Specify a custom output path
+./scripts/build-claude-rootfs.sh ~/.faize/artifacts/claude-rootfs.img
+```
+
+To rebuild the rootfs after changing `claude.extra_deps` in your config, use the CLI command:
+
+```bash
+faize claude rebuild
+```
+
+### Artifact Storage
+
+All built or downloaded artifacts are stored in `~/.faize/artifacts/`:
+
+| Artifact | File | Description |
+|----------|------|-------------|
+| Kernel | `vmlinux` | ARM64 Linux kernel with virtio support |
+| Claude rootfs | `claude-rootfs.img` | Alpine with dev tools and Claude CLI (1024MB) |
+
+To remove all downloaded/built artifacts and force a rebuild on next run:
+
+```bash
+faize prune --artifacts
 ```
 
 ## Quick Start
