@@ -1,12 +1,13 @@
 package config
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"runtime"
 
 	"github.com/mitchellh/go-homedir"
-	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 // HardcodedBlockedPaths are security-critical paths that CANNOT be overridden by user config.
@@ -22,25 +23,25 @@ var HardcodedBlockedPaths = []string{
 
 // Config represents the Faize CLI configuration
 type Config struct {
-	Defaults     Defaults `mapstructure:"defaults"`
-	Networks     []string `mapstructure:"networks"`
-	BlockedPaths []string `mapstructure:"blocked_paths"`
-	Claude       Claude   `mapstructure:"claude"`
+	Defaults     Defaults `yaml:"defaults"`
+	Networks     []string `yaml:"networks"`
+	BlockedPaths []string `yaml:"blocked_paths"`
+	Claude       Claude   `yaml:"claude"`
 }
 
 // Defaults contains default values for sandbox execution
 type Defaults struct {
-	CPUs    int    `mapstructure:"cpus"`
-	Memory  string `mapstructure:"memory"`
-	Timeout string `mapstructure:"timeout"`
+	CPUs    int    `yaml:"cpus"`
+	Memory  string `yaml:"memory"`
+	Timeout string `yaml:"timeout"`
 }
 
 // Claude contains Claude-specific configuration
 type Claude struct {
-	AutoMounts         []string `mapstructure:"auto_mounts"`
-	PersistCredentials *bool    `mapstructure:"persist_credentials"`
-	ExtraDeps          []string `mapstructure:"extra_deps"`
-	GitContext         *bool    `mapstructure:"git_context"`
+	AutoMounts         []string `yaml:"auto_mounts"`
+	PersistCredentials *bool    `yaml:"persist_credentials"`
+	ExtraDeps          []string `yaml:"extra_deps"`
+	GitContext         *bool    `yaml:"git_context"`
 }
 
 // ShouldPersistCredentials returns whether credential persistence is enabled.
@@ -63,56 +64,37 @@ func (c *Claude) ShouldMountGitContext() bool {
 
 // Load loads the configuration from ~/.faize/config.yaml or returns defaults
 func Load() (*Config, error) {
-	// Expand home directory
 	home, err := homedir.Dir()
 	if err != nil {
 		return nil, err
 	}
 
-	// Set up viper
-	configDir := filepath.Join(home, ".faize")
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(configDir)
+	configPath := filepath.Join(home, ".faize", "config.yaml")
 
-	// Set defaults
-	setDefaults()
-
-	// Try to read config file, but don't fail if it doesn't exist
-	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			// Config file was found but another error occurred
+	var cfg Config
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
 			return nil, err
 		}
-		// Config file not found, use defaults
+		// Config file not found — use defaults
+	} else {
+		if err := yaml.Unmarshal(bytes.TrimSpace(data), &cfg); err != nil {
+			return nil, err
+		}
 	}
 
-	// Unmarshal into config struct
-	var cfg Config
-	if err := viper.Unmarshal(&cfg); err != nil {
-		return nil, err
-	}
-
-	// Expand ~ in paths
+	applyDefaults(&cfg)
 	cfg.BlockedPaths = expandPaths(cfg.BlockedPaths)
 	cfg.Claude.AutoMounts = expandPaths(cfg.Claude.AutoMounts)
-
-	// Merge hardcoded blocked paths (security-critical, cannot be overridden)
 	cfg.BlockedPaths = mergeBlockedPaths(cfg.BlockedPaths, expandPaths(HardcodedBlockedPaths))
 
 	return &cfg, nil
 }
 
-// setDefaults sets default configuration values
-func setDefaults() {
-	// Defaults
-	viper.SetDefault("defaults.cpus", 2)
-	viper.SetDefault("defaults.memory", "4GB")
-	viper.SetDefault("defaults.timeout", "2h")
-	viper.SetDefault("networks", []string{"npm", "pypi", "github", "anthropic"})
-
-	// Blocked paths (SECURITY CRITICAL)
-	blockedPaths := []string{
+// defaultBlockedPaths returns the default list of security-critical blocked paths.
+func defaultBlockedPaths() []string {
+	paths := []string{
 		"~/.ssh",
 		"~/.aws",
 		"~/.config/gcloud",
@@ -121,7 +103,6 @@ func setDefaults() {
 		"~/.mozilla",
 		"~/.config/google-chrome",
 		"~/.docker",
-		// Additional credential stores
 		"~/.netrc",
 		"~/.npmrc",
 		"~/.pypirc",
@@ -133,21 +114,33 @@ func setDefaults() {
 		"~/.azure",
 	}
 
-	// Add platform-specific blocked paths
 	switch runtime.GOOS {
 	case "darwin":
-		blockedPaths = append(blockedPaths, "~/Library/Keychains")
+		paths = append(paths, "~/Library/Keychains")
 	case "linux":
-		blockedPaths = append(blockedPaths, "~/.local/share/keyrings")
+		paths = append(paths, "~/.local/share/keyrings")
 	}
 
-	viper.SetDefault("blocked_paths", blockedPaths)
+	return paths
+}
 
-	// Claude-specific defaults
-	viper.SetDefault("claude.auto_mounts", []string{})
-	viper.SetDefault("claude.persist_credentials", false)
-	viper.SetDefault("claude.extra_deps", []string{})
-	viper.SetDefault("claude.git_context", true)
+// applyDefaults fills in zero-value fields with sensible defaults.
+func applyDefaults(cfg *Config) {
+	if cfg.Defaults.CPUs == 0 {
+		cfg.Defaults.CPUs = 2
+	}
+	if cfg.Defaults.Memory == "" {
+		cfg.Defaults.Memory = "4GB"
+	}
+	if cfg.Defaults.Timeout == "" {
+		cfg.Defaults.Timeout = "2h"
+	}
+	if len(cfg.Networks) == 0 {
+		cfg.Networks = []string{"npm", "pypi", "github", "anthropic"}
+	}
+	if len(cfg.BlockedPaths) == 0 {
+		cfg.BlockedPaths = defaultBlockedPaths()
+	}
 }
 
 // expandPaths expands ~ in paths to home directory
