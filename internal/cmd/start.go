@@ -190,7 +190,12 @@ func runStart(cmd *cobra.Command, args []string) error {
 	} else if policy.Blocked {
 		Debug("Network policy: no network access")
 	} else {
-		Debug("Network policy: allowed domains: %v", policy.Domains)
+		if len(policy.Domains) > 0 {
+			Debug("Network policy: allowed domains: %v", policy.Domains)
+		}
+		if len(policy.Wildcards) > 0 {
+			Debug("Network policy: allowed wildcards: %v", policy.Wildcards)
+		}
 	}
 
 	// Create VM configuration

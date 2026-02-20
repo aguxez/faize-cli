@@ -242,8 +242,8 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 			sb.WriteString("iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT\n")
 			sb.WriteString("iptables -A OUTPUT -o lo -j ACCEPT\n")
 			sb.WriteString("echo 'Network blocked (loopback only)'\n\n")
-		} else if len(policy.Domains) > 0 {
-			// Domain-based allowlist
+		} else if len(policy.Domains) > 0 || len(policy.Wildcards) > 0 {
+			// Domain-based allowlist (with optional wildcards)
 			sb.WriteString("# === Network Policy: Domain Allowlist ===\n")
 			sb.WriteString("[ \"$FAIZE_DEBUG\" = \"1\" ] && echo 'Applying network policy: domain allowlist'\n\n")
 
@@ -262,24 +262,64 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 			sb.WriteString("iptables -A OUTPUT -p udp -d 1.1.1.1 --dport 53 -j ACCEPT\n")
 			sb.WriteString("iptables -A OUTPUT -p tcp -d 8.8.8.8 --dport 53 -j ACCEPT\n")
 			sb.WriteString("iptables -A OUTPUT -p tcp -d 1.1.1.1 --dport 53 -j ACCEPT\n\n")
-			sb.WriteString("# Resolve and allow specific domains\n")
-			domainsStr := strings.Join(policy.Domains, " ")
-			fmt.Fprintf(&sb, "ALLOWED_DOMAINS=%s\n", shellQuote(domainsStr))
-			sb.WriteString("\n")
-			sb.WriteString("# FAIZE_DEBUG already set at top of script\n")
-			sb.WriteString("for domain in $ALLOWED_DOMAINS; do\n")
-			sb.WriteString("  [ \"$FAIZE_DEBUG\" = \"1\" ] && echo \"Resolving $domain...\"\n")
-			sb.WriteString("  # Use temp file to avoid subshell issues with pipe\n")
-			sb.WriteString("  nslookup \"$domain\" 2>/dev/null | awk 'NR>2 && /^Address:/ {print $2}' > /tmp/ips_$$ || true\n")
-			sb.WriteString("  while read ip; do\n")
-			sb.WriteString("    # Skip IPv6 addresses (kernel has IPv6 disabled)\n")
-			sb.WriteString("    if [ -n \"$ip\" ] && ! echo \"$ip\" | grep -q ':'; then\n")
-			sb.WriteString("      [ \"$FAIZE_DEBUG\" = \"1\" ] && echo \"  Allowing $ip ($domain)\"\n")
-			sb.WriteString("      iptables -A OUTPUT -d \"$ip\" -j ACCEPT 2>/dev/null || echo \"  Failed to add rule for $ip\"\n")
-			sb.WriteString("    fi\n")
-			sb.WriteString("  done < /tmp/ips_$$\n")
-			sb.WriteString("  rm -f /tmp/ips_$$\n")
-			sb.WriteString("done\n\n")
+
+			// Handle literal domains
+			if len(policy.Domains) > 0 {
+				sb.WriteString("# Resolve and allow specific domains\n")
+				domainsStr := strings.Join(policy.Domains, " ")
+				fmt.Fprintf(&sb, "ALLOWED_DOMAINS=%s\n", shellQuote(domainsStr))
+				sb.WriteString("\n")
+				sb.WriteString("# FAIZE_DEBUG already set at top of script\n")
+				sb.WriteString("for domain in $ALLOWED_DOMAINS; do\n")
+				sb.WriteString("  [ \"$FAIZE_DEBUG\" = \"1\" ] && echo \"Resolving $domain...\"\n")
+				sb.WriteString("  # Use temp file to avoid subshell issues with pipe\n")
+				sb.WriteString("  nslookup \"$domain\" 2>/dev/null | awk 'NR>2 && /^Address:/ {print $2}' > /tmp/ips_$$ || true\n")
+				sb.WriteString("  while read ip; do\n")
+				sb.WriteString("    # Skip IPv6 addresses (kernel has IPv6 disabled)\n")
+				sb.WriteString("    if [ -n \"$ip\" ] && ! echo \"$ip\" | grep -q ':'; then\n")
+				sb.WriteString("      [ \"$FAIZE_DEBUG\" = \"1\" ] && echo \"  Allowing $ip ($domain)\"\n")
+				sb.WriteString("      iptables -A OUTPUT -d \"$ip\" -j ACCEPT 2>/dev/null || echo \"  Failed to add rule for $ip\"\n")
+				sb.WriteString("    fi\n")
+				sb.WriteString("  done < /tmp/ips_$$\n")
+				sb.WriteString("  rm -f /tmp/ips_$$\n")
+				sb.WriteString("done\n\n")
+			}
+
+			// Handle wildcard domains using iptables string module for SNI matching
+			if len(policy.Wildcards) > 0 {
+				sb.WriteString("# === Wildcard Domains (SNI matching) ===\n")
+				sb.WriteString("[ \"$FAIZE_DEBUG\" = \"1\" ] && echo 'Applying wildcard domain rules...'\n\n")
+
+				for _, wildcard := range policy.Wildcards {
+					baseDomain := network.ExtractBaseDomain(wildcard)
+
+					// Add SNI matching rules for HTTPS (port 443)
+					fmt.Fprintf(&sb, "# Wildcard: %s\n", wildcard)
+					fmt.Fprintf(&sb, "[ \"$FAIZE_DEBUG\" = \"1\" ] && echo 'Adding SNI rules for %s'\n", wildcard)
+
+					// Match subdomains (e.g., sub.example.com matches ".example.com" in SNI)
+					fmt.Fprintf(&sb, "iptables -A OUTPUT -p tcp --dport 443 -m string --string %s --algo bm -j ACCEPT 2>/dev/null || "+
+						"echo 'Warning: iptables string module not available for %s'\n",
+						shellQuote("."+baseDomain), wildcard)
+
+					// Also match the base domain itself (e.g., example.com)
+					fmt.Fprintf(&sb, "iptables -A OUTPUT -p tcp --dport 443 -m string --string %s --algo bm -j ACCEPT 2>/dev/null || true\n",
+						shellQuote(baseDomain))
+
+					// Resolve base domain IPs as fallback for non-SNI traffic (HTTP, direct IP)
+					sb.WriteString("# Fallback: resolve base domain IPs\n")
+					fmt.Fprintf(&sb, "nslookup %s 2>/dev/null | awk 'NR>2 && /^Address:/ {print $2}' > /tmp/wildcard_ips_$$ || true\n",
+						shellQuote(baseDomain))
+					sb.WriteString("while read ip; do\n")
+					sb.WriteString("  if [ -n \"$ip\" ] && ! echo \"$ip\" | grep -q ':'; then\n")
+					fmt.Fprintf(&sb, "    [ \"$FAIZE_DEBUG\" = \"1\" ] && echo \"  Allowing $ip (%s base)\"\n", baseDomain)
+					sb.WriteString("    iptables -A OUTPUT -d \"$ip\" -j ACCEPT 2>/dev/null || true\n")
+					sb.WriteString("  fi\n")
+					sb.WriteString("done < /tmp/wildcard_ips_$$\n")
+					sb.WriteString("rm -f /tmp/wildcard_ips_$$\n\n")
+				}
+			}
+
 			sb.WriteString("# Show applied rules (debug only)\n")
 			sb.WriteString("if [ \"$FAIZE_DEBUG\" = \"1\" ]; then\n")
 			sb.WriteString("  echo '=== iptables OUTPUT rules ==='\n")
