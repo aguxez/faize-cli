@@ -109,11 +109,11 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Read CPUs and memory directly from config
-	cpus := cfg.Defaults.CPUs
-	memory := cfg.Defaults.Memory
+	cpus := cfg.Resources.CPUs
+	memory := cfg.Resources.Memory
 
 	if startTimeout == "" {
-		startTimeout = cfg.Defaults.Timeout
+		startTimeout = cfg.Timeout
 	}
 
 	// Use network config

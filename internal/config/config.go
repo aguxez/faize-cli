@@ -23,17 +23,17 @@ var HardcodedBlockedPaths = []string{
 
 // Config represents the Faize CLI configuration
 type Config struct {
-	Defaults     Defaults `yaml:"defaults"`
-	Networks     []string `yaml:"networks"`
-	BlockedPaths []string `yaml:"blocked_paths"`
-	Claude       Claude   `yaml:"claude"`
+	Resources    Resources `yaml:"resources"`
+	Timeout      string    `yaml:"timeout"`
+	Networks     []string  `yaml:"networks"`
+	BlockedPaths []string  `yaml:"blocked_paths"`
+	Claude       Claude    `yaml:"claude"`
 }
 
-// Defaults contains default values for sandbox execution
-type Defaults struct {
-	CPUs    int    `yaml:"cpus"`
-	Memory  string `yaml:"memory"`
-	Timeout string `yaml:"timeout"`
+// Resources contains resource allocation for sandbox execution
+type Resources struct {
+	CPUs   int    `yaml:"cpus"`
+	Memory string `yaml:"memory"`
 }
 
 // Claude contains Claude-specific configuration
@@ -126,14 +126,14 @@ func defaultBlockedPaths() []string {
 
 // applyDefaults fills in zero-value fields with sensible defaults.
 func applyDefaults(cfg *Config) {
-	if cfg.Defaults.CPUs == 0 {
-		cfg.Defaults.CPUs = 2
+	if cfg.Resources.CPUs == 0 {
+		cfg.Resources.CPUs = 2
 	}
-	if cfg.Defaults.Memory == "" {
-		cfg.Defaults.Memory = "4GB"
+	if cfg.Resources.Memory == "" {
+		cfg.Resources.Memory = "4GB"
 	}
-	if cfg.Defaults.Timeout == "" {
-		cfg.Defaults.Timeout = "2h"
+	if cfg.Timeout == "" {
+		cfg.Timeout = "2h"
 	}
 	if len(cfg.Networks) == 0 {
 		cfg.Networks = []string{"npm", "pypi", "github", "anthropic"}

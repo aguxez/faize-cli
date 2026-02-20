@@ -18,9 +18,9 @@ func TestLoadDefaults(t *testing.T) {
 	require.NotNil(t, cfg)
 
 	// Check defaults
-	assert.Equal(t, 2, cfg.Defaults.CPUs)
-	assert.Equal(t, "4GB", cfg.Defaults.Memory)
-	assert.Equal(t, "2h", cfg.Defaults.Timeout)
+	assert.Equal(t, 2, cfg.Resources.CPUs)
+	assert.Equal(t, "4GB", cfg.Resources.Memory)
+	assert.Equal(t, "2h", cfg.Timeout)
 	assert.Contains(t, cfg.Networks, "npm")
 	assert.Contains(t, cfg.Networks, "pypi")
 	assert.Contains(t, cfg.Networks, "github")
