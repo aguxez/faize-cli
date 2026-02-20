@@ -1,10 +1,11 @@
-.PHONY: build build-unsigned test install clean lint sign
+.PHONY: build build-unsigned test install clean lint sign kernel rootfs claude-rootfs artifacts all
 
 BINARY_NAME=faize
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-ldflags "-X main.version=$(VERSION)"
 ENTITLEMENTS=faize.entitlements
 UNAME_S=$(shell uname -s)
+ARTIFACTS_DIR=$(HOME)/.faize/artifacts
 
 # Build and sign (macOS gets entitlements for Virtualization.framework)
 build: build-unsigned sign
@@ -50,3 +51,20 @@ fmt:
 
 vet:
 	go vet ./...
+
+# Artifact targets
+kernel:
+	@mkdir -p $(ARTIFACTS_DIR)
+	bash scripts/build-kernel.sh 6.6.10 "" $(ARTIFACTS_DIR)/vmlinux
+
+rootfs:
+	@mkdir -p $(ARTIFACTS_DIR)
+	bash scripts/build-rootfs.sh $(ARTIFACTS_DIR)/rootfs.img
+
+claude-rootfs:
+	@mkdir -p $(ARTIFACTS_DIR)
+	bash scripts/build-claude-rootfs.sh $(ARTIFACTS_DIR)/claude-rootfs.img
+
+artifacts: kernel claude-rootfs
+
+all: build artifacts

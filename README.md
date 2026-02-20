@@ -18,70 +18,69 @@ Faize is a CLI that creates isolated, reproducible virtual machines for running 
 
 - macOS with Virtualization.framework support
 - Go 1.24+
-- Docker (for building the kernel and rootfs images)
+- Docker (for building VM images — kernel and rootfs)
 
-### Building the CLI
+### Quick Setup
 
 ```bash
-# Build and code-sign (macOS)
+# Full build: CLI + kernel + claude-rootfs
+make all
+
+# CLI only (artifacts auto-provision on first `faize start`)
 make build
 
-# Or build without signing
-make build-unsigned
-
-# Install to $GOPATH/bin (or ~/go/bin)
+# Install to $GOPATH/bin
 make install
 ```
 
-### Building the Kernel
-
-Faize runs VMs with a custom ARM64 Linux kernel that includes virtio support for Apple's Virtualization.framework. The kernel is downloaded automatically from GitHub releases on first run, but you can build it manually:
+### Individual Artifact Targets
 
 ```bash
-# Build the kernel (uses Docker on macOS for cross-compilation)
-./scripts/build-kernel.sh
-
-# Specify a kernel version and output path
-./scripts/build-kernel.sh 6.6.10 /tmp/kernel-build ~/.faize/artifacts/vmlinux
+make kernel         # Build just the kernel
+make claude-rootfs  # Build just the Claude rootfs (requires Docker)
+make rootfs         # Build the base rootfs (requires Docker)
+make artifacts      # Build kernel + claude-rootfs
 ```
 
-The script downloads the Linux kernel source, applies a minimal ARM64 config (`scripts/kernel-config-arm64-minimal`), and produces an uncompressed `Image` file. On macOS, the build runs inside a Docker container with the required cross-compilation toolchain.
+### How Auto-Provisioning Works
 
-### Building the Claude Rootfs Image
+If artifacts are missing when you run `faize start`, the CLI will:
 
-The Claude rootfs is a 1024MB Alpine-based ext4 image that ships with bash, git, python3, Node.js, and the Claude Code CLI pre-installed. Like the kernel, it is built automatically on first run if not available from GitHub releases, but you can build it manually:
+1. **Kernel** — download from GitHub releases, or build from source via Docker
+2. **Claude rootfs** — build locally via Docker (not published to releases)
 
-```bash
-# Build the Claude rootfs image
-./scripts/build-claude-rootfs.sh
-
-# Build with extra Alpine packages baked in
-EXTRA_DEPS="ripgrep python3-dev" ./scripts/build-claude-rootfs.sh
-
-# Specify a custom output path
-./scripts/build-claude-rootfs.sh ~/.faize/artifacts/claude-rootfs.img
-```
-
-To rebuild the rootfs after changing `claude.extra_deps` in your config, use the CLI command:
-
-```bash
-faize claude rebuild
-```
+If Docker is unavailable, the CLI will suggest running `make artifacts` to pre-build.
 
 ### Artifact Storage
 
-All built or downloaded artifacts are stored in `~/.faize/artifacts/`:
+All artifacts live in `~/.faize/artifacts/`:
 
 | Artifact | File | Description |
 |----------|------|-------------|
 | Kernel | `vmlinux` | ARM64 Linux kernel with virtio support |
 | Claude rootfs | `claude-rootfs.img` | Alpine with dev tools and Claude CLI (1024MB) |
 
-To remove all downloaded/built artifacts and force a rebuild on next run:
+To remove all artifacts and force a rebuild:
 
 ```bash
 faize prune --artifacts
 ```
+
+<details>
+<summary>Manual build scripts (advanced)</summary>
+
+```bash
+# Build kernel with specific version and output
+./scripts/build-kernel.sh 6.6.10 /tmp/kernel-build ~/.faize/artifacts/vmlinux
+
+# Build Claude rootfs with extra packages
+EXTRA_DEPS="ripgrep python3-dev" ./scripts/build-claude-rootfs.sh
+
+# Rebuild rootfs with deps from config
+faize claude rebuild
+```
+
+</details>
 
 ## Quick Start
 
@@ -207,7 +206,9 @@ scripts/
 ## Development
 
 ```bash
-make build       # Build and sign
+make build       # Build and sign the CLI
+make all         # Build CLI + kernel + claude-rootfs
+make artifacts   # Build kernel + claude-rootfs only
 make test        # Run tests
 make lint        # Run linter
 make fmt         # Format code
