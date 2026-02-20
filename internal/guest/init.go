@@ -246,6 +246,13 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 			// Domain-based allowlist
 			sb.WriteString("# === Network Policy: Domain Allowlist ===\n")
 			sb.WriteString("[ \"$FAIZE_DEBUG\" = \"1\" ] && echo 'Applying network policy: domain allowlist'\n\n")
+
+			// Force DNS to use public resolvers that we allow through iptables
+			// This is necessary because DHCP may have set a different DNS server
+			sb.WriteString("# Force DNS to use public resolvers (iptables will only allow these)\n")
+			sb.WriteString("echo 'nameserver 8.8.8.8' > /etc/resolv.conf\n")
+			sb.WriteString("echo 'nameserver 1.1.1.1' >> /etc/resolv.conf\n\n")
+
 			sb.WriteString("# Default: drop all outbound except established connections\n")
 			sb.WriteString("iptables -P OUTPUT DROP\n")
 			sb.WriteString("iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT\n")
