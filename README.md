@@ -68,18 +68,6 @@ To rebuild the rootfs after changing `claude.extra_deps` in your config, use the
 faize claude rebuild
 ```
 
-### Building the Base Rootfs Image
-
-A minimal 64MB rootfs with only a statically-linked BusyBox is also available. This is used as the base VM image:
-
-```bash
-# Build the base rootfs image
-./scripts/build-rootfs.sh
-
-# Specify a custom output path
-./scripts/build-rootfs.sh ~/.faize/artifacts/rootfs.img
-```
-
 ### Artifact Storage
 
 All built or downloaded artifacts are stored in `~/.faize/artifacts/`:
@@ -87,7 +75,6 @@ All built or downloaded artifacts are stored in `~/.faize/artifacts/`:
 | Artifact | File | Description |
 |----------|------|-------------|
 | Kernel | `vmlinux` | ARM64 Linux kernel with virtio support |
-| Base rootfs | `rootfs.img` | Minimal Alpine image (64MB) |
 | Claude rootfs | `claude-rootfs.img` | Alpine with dev tools and Claude CLI (1024MB) |
 
 To remove all downloaded/built artifacts and force a rebuild on next run:
