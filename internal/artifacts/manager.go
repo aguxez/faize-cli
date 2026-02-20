@@ -83,6 +83,7 @@ func (m *Manager) SessionDir(id string) string {
 func (m *Manager) ensureKernel() error {
 	path := m.KernelPath()
 	if _, err := os.Stat(path); err == nil {
+		fmt.Printf("Kernel found at %s\n", path)
 		return nil // Already exists
 	}
 
@@ -94,7 +95,7 @@ func (m *Manager) ensureKernel() error {
 	}
 
 	// Fallback: build kernel from source with virtio support
-	fmt.Printf("Primary kernel unavailable, building from source...\n")
+	fmt.Printf("Kernel not available from GitHub releases, building from source (requires Docker)...\n")
 	if err := m.buildKernel(path); err != nil {
 		return fmt.Errorf("failed to get kernel from any source: %w", err)
 	}
@@ -105,6 +106,7 @@ func (m *Manager) ensureKernel() error {
 func (m *Manager) ensureRootfs() error {
 	path := m.RootfsPath()
 	if _, err := os.Stat(path); err == nil {
+		fmt.Printf("Rootfs found at %s\n", path)
 		return nil // Already exists
 	}
 
@@ -170,6 +172,14 @@ func (m *Manager) Clean() error {
 		return fmt.Errorf("failed to clean artifacts: %w", err)
 	}
 	return os.MkdirAll(m.dir, 0755)
+}
+
+// dockerAvailable checks if Docker is installed and the daemon is running
+func dockerAvailable() bool {
+	cmd := exec.Command("docker", "info")
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	return cmd.Run() == nil
 }
 
 // buildKernel builds the kernel using scripts/build-kernel.sh
@@ -240,6 +250,12 @@ func (m *Manager) BuildRootfs() error {
 		return fmt.Errorf("failed to find build-rootfs.sh script: %w", err)
 	}
 
+	if !dockerAvailable() {
+		return fmt.Errorf("docker is required to build rootfs but is not available.\n" +
+			"Either install Docker (https://www.docker.com/products/docker-desktop) or\n" +
+			"pre-build artifacts with: make rootfs")
+	}
+
 	fmt.Printf("Building rootfs using: %s\n", scriptPath)
 
 	// Execute the script with rootfs path as argument
@@ -277,7 +293,13 @@ func (m *Manager) EnsureClaudeRootfs() error {
 		return nil // Already exists
 	}
 
-	// Try to build locally
+	// Claude rootfs is not published to GitHub releases — always built locally
+	fmt.Printf("Claude rootfs not found at %s, building locally...\n", path)
+	if !dockerAvailable() {
+		return fmt.Errorf("docker is required to build claude-rootfs but is not available.\n" +
+			"Either install Docker (https://www.docker.com/products/docker-desktop) or\n" +
+			"pre-build artifacts with: make claude-rootfs")
+	}
 	return m.BuildClaudeRootfs()
 }
 
@@ -291,6 +313,12 @@ func (m *Manager) BuildClaudeRootfsWithDeps(extraDeps []string) error {
 	scriptPath, err := m.findClaudeBuildScript()
 	if err != nil {
 		return fmt.Errorf("failed to find build-claude-rootfs.sh script: %w", err)
+	}
+
+	if !dockerAvailable() {
+		return fmt.Errorf("docker is required to build claude-rootfs but is not available.\n" +
+			"Either install Docker (https://www.docker.com/products/docker-desktop) or\n" +
+			"pre-build artifacts with: make claude-rootfs")
 	}
 
 	fmt.Printf("Building Claude rootfs using: %s\n", scriptPath)
