@@ -38,8 +38,8 @@ jobs:
       - name: Lint
         run: make lint
 
-  build:
-    name: Build
+  vet:
+    name: Vet
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,9 +47,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-
-      - name: Build
-        run: make build-unsigned
 
       - name: Vet
         run: make vet
