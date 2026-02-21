@@ -150,10 +150,10 @@ Special values: `all` (unrestricted) and `none` (no network access).
 Faize reads from `~/.faize/config.yaml`:
 
 ```yaml
-defaults:
+resources:
   cpus: 2
   memory: 4GB
-  timeout: 2h
+timeout: 2h
 
 networks:
   - npm
