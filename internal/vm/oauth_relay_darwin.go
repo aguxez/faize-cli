@@ -101,6 +101,6 @@ func startOAuthRelay(done <-chan struct{}, bootstrapDir string, port string) err
 		_ = srv.Shutdown(ctx)
 	}()
 
-	go srv.Serve(ln)
+	go func() { _ = srv.Serve(ln) }()
 	return nil
 }
