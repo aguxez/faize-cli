@@ -533,6 +533,24 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("  fi\n")
 	sb.WriteString("fi\n\n")
 
+	// Background OAuth callback relay poller
+	sb.WriteString("# Background OAuth callback relay poller\n")
+	sb.WriteString("(\n")
+	sb.WriteString("  while true; do\n")
+	sb.WriteString("    if [ -f /mnt/bootstrap/auth-callback ]; then\n")
+	sb.WriteString("      mv /mnt/bootstrap/auth-callback /tmp/auth-callback-$$ 2>/dev/null || { sleep 1; continue; }\n")
+	sb.WriteString("      CALLBACK_URL=$(cat /tmp/auth-callback-$$ 2>/dev/null) || true\n")
+	sb.WriteString("      rm -f /tmp/auth-callback-$$\n")
+	sb.WriteString("      case \"$CALLBACK_URL\" in\n")
+	sb.WriteString("        http://localhost:[0-9]*/*)  \n")
+	sb.WriteString("          wget -q -O /dev/null \"$CALLBACK_URL\" 2>/dev/null || true\n")
+	sb.WriteString("          ;;\n")
+	sb.WriteString("      esac\n")
+	sb.WriteString("    fi\n")
+	sb.WriteString("    sleep 1\n")
+	sb.WriteString("  done\n")
+	sb.WriteString(") &\n\n")
+
 	// Background terminal resize watcher — polls VirtioFS termsize file and
 	// resizes PTYs when the host terminal dimensions change.
 	sb.WriteString("# Background terminal resize watcher\n")

@@ -48,7 +48,17 @@ func watchOpenURL(done <-chan struct{}, bootstrapDir string) {
 				continue
 			}
 
-			fmt.Fprintf(os.Stderr, "[faize] Opening in browser: %s\r\n", url)
+			debugLog("Opening URL in browser: %s", url)
+
+			// If this is an OAuth URL with a localhost redirect, start the callback relay
+			if port, ok := parseOAuthRedirect(url); ok {
+				debugLog("Detected OAuth flow, starting callback relay on port %s", port)
+				if err := startOAuthRelay(done, bootstrapDir, port); err != nil {
+					fmt.Fprintf(os.Stderr, "[faize] OAuth relay failed on port %s: %v\r\n", port, err)
+					continue
+				}
+			}
+
 			_ = exec.Command("open", url).Start()
 		}
 	}
