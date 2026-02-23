@@ -620,6 +620,9 @@ func (m *VZManager) Attach(id string) error {
 	clipboardDir := filepath.Join(m.artifacts.SessionDir(id), "bootstrap", "clipboard")
 	client.SetClipboardDir(clipboardDir)
 
+	// Set up URL open watcher via VirtioFS bootstrap directory
+	client.SetOpenURLDir(filepath.Join(m.artifacts.SessionDir(id), "bootstrap"))
+
 	// Write current terminal size immediately (handles reattach from different-sized terminal)
 	if term.IsTerminal(int(os.Stdout.Fd())) {
 		if w, h, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 && h > 0 {

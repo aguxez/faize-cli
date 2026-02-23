@@ -23,11 +23,11 @@ const escapeHelp = "\r\nSupported escape sequences:\r\n  ~.  Disconnect from ses
 // EscapeWriter is not safe for concurrent use from multiple goroutines.
 // It expects sequential Write() calls from a single source (stdin).
 type EscapeWriter struct {
-	w             io.Writer     // underlying writer to forward bytes to
-	afterNewline  bool          // true if last byte was newline or at start
-	pendingTilde  bool          // true if we saw ~ and waiting for next char
-	detachCh      chan struct{} // closed when ~. detected
-	stdout        io.Writer     // for printing help message
+	w            io.Writer     // underlying writer to forward bytes to
+	afterNewline bool          // true if last byte was newline or at start
+	pendingTilde bool          // true if we saw ~ and waiting for next char
+	detachCh     chan struct{} // closed when ~. detected
+	stdout       io.Writer     // for printing help message
 }
 
 // NewEscapeWriter creates a new EscapeWriter that wraps w
@@ -110,6 +110,7 @@ type ConsoleClient struct {
 	conn         net.Conn
 	termsizePath string
 	clipboardDir string
+	openURLDir   string
 }
 
 // SetTermsizePath sets the path to the termsize file used for propagating
@@ -122,6 +123,12 @@ func (c *ConsoleClient) SetTermsizePath(path string) {
 // host clipboard contents to the VM guest via VirtioFS.
 func (c *ConsoleClient) SetClipboardDir(path string) {
 	c.clipboardDir = path
+}
+
+// SetOpenURLDir sets the path to the bootstrap directory used for watching
+// URL open requests from the VM guest via VirtioFS.
+func (c *ConsoleClient) SetOpenURLDir(path string) {
+	c.openURLDir = path
 }
 
 // NewConsoleClient connects to a VM console Unix socket
@@ -183,6 +190,13 @@ func (c *ConsoleClient) Attach(stdin io.Reader, stdout io.Writer) error {
 	// If err is timeout, that's expected - no immediate data, proceed normally
 	if err != nil && !os.IsTimeout(err) && err != io.EOF {
 		return fmt.Errorf("failed to read from console: %w", err)
+	}
+
+	// Start URL open watcher to handle guest browser-open requests via VirtioFS
+	openURLDone := make(chan struct{})
+	defer close(openURLDone)
+	if c.openURLDir != "" {
+		go watchOpenURL(openURLDone, c.openURLDir)
 	}
 
 	// Create escape writer for detecting ~. sequence
