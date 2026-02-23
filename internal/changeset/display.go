@@ -21,12 +21,12 @@ func PrintSummary(w io.Writer, cs *SessionChangeset) {
 	totalChanges += len(cs.GuestChanges)
 
 	if totalChanges == 0 {
-		fmt.Fprintln(w, "\nNo changes detected.")
+		_, _ = fmt.Fprintln(w, "\nNo changes detected.")
 		return
 	}
 
-	fmt.Fprintln(w, "\nSession Changes")
-	fmt.Fprintln(w, strings.Repeat("─", 40))
+	_, _ = fmt.Fprintln(w, "\nSession Changes")
+	_, _ = fmt.Fprintln(w, strings.Repeat("─", 40))
 
 	// Print mount changes
 	for _, mc := range cs.MountChanges {
@@ -35,21 +35,21 @@ func PrintSummary(w io.Writer, cs *SessionChangeset) {
 		}
 		// Determine label based on mount target
 		label := mountLabel(mc.Target)
-		fmt.Fprintf(w, "\n%s (%s → %s):\n", label, mc.Source, mc.Target)
+		_, _ = fmt.Fprintf(w, "\n%s (%s → %s):\n", label, mc.Source, mc.Target)
 		printChanges(w, mc.Changes)
 	}
 
 	// Print guest changes
 	if len(cs.GuestChanges) > 0 {
-		fmt.Fprintf(w, "\nSystem (rootfs overlay):\n")
+		_, _ = fmt.Fprintf(w, "\nSystem (rootfs overlay):\n")
 		if len(cs.GuestChanges) > maxDisplayChanges {
 			for _, path := range cs.GuestChanges[:5] {
-				fmt.Fprintf(w, "  ~ %s\n", path)
+				_, _ = fmt.Fprintf(w, "  ~ %s\n", path)
 			}
-			fmt.Fprintf(w, "  (%d files total)\n", len(cs.GuestChanges))
+			_, _ = fmt.Fprintf(w, "  (%d files total)\n", len(cs.GuestChanges))
 		} else {
 			for _, path := range cs.GuestChanges {
-				fmt.Fprintf(w, "  ~ %s\n", path)
+				_, _ = fmt.Fprintf(w, "  ~ %s\n", path)
 			}
 		}
 	}
@@ -94,7 +94,7 @@ func printChanges(w io.Writer, changes []Change) {
 			printChange(w, c)
 			shown++
 		}
-		fmt.Fprintf(w, "  (%d changes total: %d created, %d modified, %d deleted)\n",
+		_, _ = fmt.Fprintf(w, "  (%d changes total: %d created, %d modified, %d deleted)\n",
 			len(changes), len(created), len(modified), len(deleted))
 		return
 	}
@@ -107,11 +107,11 @@ func printChanges(w io.Writer, changes []Change) {
 func printChange(w io.Writer, c Change) {
 	switch c.Type {
 	case "created":
-		fmt.Fprintf(w, "  + %-50s (%s)\n", c.Path, formatSize(c.NewSize))
+		_, _ = fmt.Fprintf(w, "  + %-50s (%s)\n", c.Path, formatSize(c.NewSize))
 	case "modified":
-		fmt.Fprintf(w, "  ~ %-50s (%s → %s)\n", c.Path, formatSize(c.OldSize), formatSize(c.NewSize))
+		_, _ = fmt.Fprintf(w, "  ~ %-50s (%s → %s)\n", c.Path, formatSize(c.OldSize), formatSize(c.NewSize))
 	case "deleted":
-		fmt.Fprintf(w, "  - %s\n", c.Path)
+		_, _ = fmt.Fprintf(w, "  - %s\n", c.Path)
 	}
 }
 

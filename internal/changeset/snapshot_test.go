@@ -14,10 +14,10 @@ import (
 func TestTake_BasicFiles(t *testing.T) {
 	// Create temp dir with a few files, verify snapshot entries
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "file1.txt"), []byte("hello"), 0644)
-	os.WriteFile(filepath.Join(dir, "file2.go"), []byte("package main"), 0644)
-	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
-	os.WriteFile(filepath.Join(dir, "subdir", "nested.txt"), []byte("nested"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "file1.txt"), []byte("hello"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "file2.go"), []byte("package main"), 0644)
+	_ = os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
+	_ = os.WriteFile(filepath.Join(dir, "subdir", "nested.txt"), []byte("nested"), 0644)
 
 	snap, err := Take(dir)
 	require.NoError(t, err)
@@ -30,9 +30,9 @@ func TestTake_BasicFiles(t *testing.T) {
 func TestTake_SkipsGitContents(t *testing.T) {
 	dir := t.TempDir()
 	gitDir := filepath.Join(dir, ".git")
-	os.MkdirAll(filepath.Join(gitDir, "objects"), 0755)
-	os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte("ref: refs/heads/main"), 0644)
-	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0644)
+	_ = os.MkdirAll(filepath.Join(gitDir, "objects"), 0755)
+	_ = os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte("ref: refs/heads/main"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0644)
 
 	snap, err := Take(dir)
 	require.NoError(t, err)
@@ -47,10 +47,10 @@ func TestTake_SkipsGitContents(t *testing.T) {
 func TestTake_SummarizesNodeModules(t *testing.T) {
 	dir := t.TempDir()
 	nmDir := filepath.Join(dir, "node_modules")
-	os.MkdirAll(nmDir, 0755)
+	_ = os.MkdirAll(nmDir, 0755)
 	// Create a few fake packages
 	for i := 0; i < 5; i++ {
-		os.WriteFile(filepath.Join(nmDir, fmt.Sprintf("pkg%d", i)), []byte("x"), 0644)
+		_ = os.WriteFile(filepath.Join(nmDir, fmt.Sprintf("pkg%d", i)), []byte("x"), 0644)
 	}
 
 	snap, err := Take(dir)
@@ -156,7 +156,7 @@ func TestParseGuestChanges_WithContent(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "guest-changes.txt")
 	content := "/etc/resolv.conf\n/home/claude/.cache/pip/something\n\n/usr/bin/newpkg\n"
-	os.WriteFile(path, []byte(content), 0644)
+	_ = os.WriteFile(path, []byte(content), 0644)
 
 	lines, err := ParseGuestChanges(path)
 	require.NoError(t, err)
