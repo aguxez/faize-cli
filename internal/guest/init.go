@@ -130,6 +130,18 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 		sb.WriteString("  fi\n")
 	}
 
+	sb.WriteString("  # Record files modified during session (rootfs overlay changes)\n")
+	sb.WriteString("  {\n")
+	sb.WriteString("    find / -newer /mnt/bootstrap/init.sh \\\n")
+	sb.WriteString("      -not -path '/proc/*' \\\n")
+	sb.WriteString("      -not -path '/sys/*' \\\n")
+	sb.WriteString("      -not -path '/dev/*' \\\n")
+	sb.WriteString("      -not -path '/mnt/*' \\\n")
+	sb.WriteString("      -not -path '/tmp/*' \\\n")
+	sb.WriteString("      -not -path '/run/*' \\\n")
+	sb.WriteString("      2>/dev/null || true\n")
+	sb.WriteString("  } > /mnt/bootstrap/guest-changes.txt 2>/dev/null\n")
+
 	sb.WriteString("  # Sync filesystems\n")
 	sb.WriteString("  sync\n")
 	sb.WriteString("  # Power off\n")
