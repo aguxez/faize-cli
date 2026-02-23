@@ -42,6 +42,7 @@ type Claude struct {
 	PersistCredentials *bool    `yaml:"persist_credentials"`
 	ExtraDeps          []string `yaml:"extra_deps"`
 	GitContext         *bool    `yaml:"git_context"`
+	ShowDiff           *bool    `yaml:"show_diff"`
 }
 
 // ShouldPersistCredentials returns whether credential persistence is enabled.
@@ -60,6 +61,15 @@ func (c *Claude) ShouldMountGitContext() bool {
 		return true
 	}
 	return *c.GitContext
+}
+
+// ShouldShowDiff returns whether session change tracking and diff display is enabled.
+// Defaults to true when not explicitly set.
+func (c *Claude) ShouldShowDiff() bool {
+	if c.ShowDiff == nil {
+		return true
+	}
+	return *c.ShowDiff
 }
 
 // Load loads the configuration from ~/.faize/config.yaml or returns defaults

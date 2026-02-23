@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/faize-ai/faize/internal/changeset"
 	"github.com/faize-ai/faize/internal/config"
 	"github.com/faize-ai/faize/internal/git"
 	"github.com/faize-ai/faize/internal/mount"
@@ -23,7 +24,8 @@ var (
 	startTimeout      string
 	startPersistCreds bool
 	startNoGitContext bool
-	startClaude           bool
+	startClaude       bool
+	startNoDiff       bool
 )
 
 var startCmd = &cobra.Command{
@@ -52,6 +54,7 @@ func init() {
 	startCmd.Flags().BoolVar(&startPersistCreds, "persist-credentials", false, "persist Claude credentials across sessions")
 	startCmd.Flags().BoolVar(&startNoGitContext, "no-git-context", false, "disable automatic .git directory mounting from git root")
 	startCmd.Flags().BoolVar(&startClaude, "claude", true, "use Claude Code mode")
+	startCmd.Flags().BoolVar(&startNoDiff, "no-diff", false, "disable change tracking and summary")
 
 	rootCmd.AddCommand(startCmd)
 }
@@ -266,6 +269,35 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 	Debug("VM started successfully")
 
+	// Take pre-snapshots of rw mounts for change tracking
+	type mountSnapshot struct {
+		source string
+		target string
+		tag    string
+		snap   changeset.Snapshot
+	}
+	var preSnapshots []mountSnapshot
+	showDiff := cfg.Claude.ShouldShowDiff() && !startNoDiff
+	if showDiff {
+		for _, m := range parsedMounts {
+			if m.ReadOnly {
+				continue
+			}
+			Debug("Taking pre-snapshot of %s", m.Source)
+			snap, err := changeset.Take(m.Source)
+			if err != nil {
+				Debug("Failed to snapshot %s: %v", m.Source, err)
+				continue
+			}
+			preSnapshots = append(preSnapshots, mountSnapshot{
+				source: m.Source,
+				target: m.Target,
+				tag:    m.Tag,
+				snap:   snap,
+			})
+		}
+	}
+
 	// Ensure session is stopped when we exit (detach, VM stop, error, signal)
 	defer func() {
 		fmt.Printf("\nStopping session %s...\n", sess.ID)
@@ -283,5 +315,49 @@ func runStart(cmd *cobra.Command, args []string) error {
 	if err := manager.Attach(sess.ID); err != nil && !errors.Is(err, vm.ErrUserDetach) {
 		return fmt.Errorf("console error: %w", err)
 	}
+
+	// Post-session change tracking
+	if showDiff && len(preSnapshots) > 0 {
+		var mountChanges []changeset.MountChanges
+		for _, pre := range preSnapshots {
+			Debug("Taking post-snapshot of %s", pre.source)
+			postSnap, err := changeset.Take(pre.source)
+			if err != nil {
+				Debug("Failed to post-snapshot %s: %v", pre.source, err)
+				continue
+			}
+			changes := changeset.Diff(pre.snap, postSnap)
+			changes = changeset.FilterNoise(changes, pre.snap, postSnap)
+			if len(changes) > 0 {
+				mountChanges = append(mountChanges, changeset.MountChanges{
+					Source:  pre.source,
+					Target:  pre.target,
+					Changes: changes,
+				})
+			}
+		}
+
+		// Read guest-side changes from bootstrap dir
+		bootstrapDir := filepath.Join(home, ".faize", "sessions", sess.ID, "bootstrap")
+		guestChanges, _ := changeset.ParseGuestChanges(filepath.Join(bootstrapDir, "guest-changes.txt"))
+
+		cs := &changeset.SessionChangeset{
+			SessionID:    sess.ID,
+			MountChanges: mountChanges,
+			GuestChanges: guestChanges,
+		}
+
+		// Display summary
+		changeset.PrintSummary(os.Stdout, cs)
+
+		// Save for later viewing with `faize diff`
+		changesetPath := filepath.Join(bootstrapDir, "changeset.json")
+		if err := os.MkdirAll(bootstrapDir, 0755); err == nil {
+			if saveErr := changeset.SaveChangeset(changesetPath, cs); saveErr != nil {
+				Debug("Failed to save changeset: %v", saveErr)
+			}
+		}
+	}
+
 	return nil
 }
