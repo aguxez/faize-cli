@@ -234,3 +234,52 @@ func ParseGuestChanges(path string) ([]string, error) {
 	}
 	return lines, nil
 }
+
+// defaultIgnorePrefixes are path prefixes for internal state that should not
+// appear in user-facing change summaries.
+var defaultIgnorePrefixes = []string{".git", ".omc", ".claude"}
+
+// matchesIgnorePrefix reports whether path starts with any default ignore prefix.
+func matchesIgnorePrefix(path string) bool {
+	for _, prefix := range defaultIgnorePrefixes {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// FilterNoise removes directory entries and internal-state paths from a change list.
+// Directory entries are redundant when child files are listed.
+// Internal paths (.git, .omc, .claude) are not user code.
+func FilterNoise(changes []Change, before, after Snapshot) []Change {
+	var filtered []Change
+	for _, c := range changes {
+		// Skip directories
+		if entry, ok := after[c.Path]; ok && entry.IsDir {
+			continue
+		}
+		if entry, ok := before[c.Path]; ok && entry.IsDir {
+			continue
+		}
+		// Skip noise paths
+		if matchesIgnorePrefix(c.Path) {
+			continue
+		}
+		filtered = append(filtered, c)
+	}
+	return filtered
+}
+
+// FilterPaths removes internal-state paths from a change list (prefix-only filtering).
+// Use this when snapshots are not available (e.g. loading saved changesets).
+func FilterPaths(changes []Change) []Change {
+	var filtered []Change
+	for _, c := range changes {
+		if matchesIgnorePrefix(c.Path) {
+			continue
+		}
+		filtered = append(filtered, c)
+	}
+	return filtered
+}

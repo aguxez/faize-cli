@@ -327,6 +327,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 				continue
 			}
 			changes := changeset.Diff(pre.snap, postSnap)
+			changes = changeset.FilterNoise(changes, pre.snap, postSnap)
 			if len(changes) > 0 {
 				mountChanges = append(mountChanges, changeset.MountChanges{
 					Source:  pre.source,

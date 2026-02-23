@@ -65,6 +65,10 @@ func runDiff(cmd *cobra.Command, args []string) error {
 		return enc.Encode(cs)
 	}
 
+	// Filter noise paths from older saved changesets
+	for i := range cs.MountChanges {
+		cs.MountChanges[i].Changes = changeset.FilterPaths(cs.MountChanges[i].Changes)
+	}
 	changeset.PrintSummary(os.Stdout, cs)
 	return nil
 }

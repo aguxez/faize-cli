@@ -18,7 +18,6 @@ func PrintSummary(w io.Writer, cs *SessionChangeset) {
 	for _, mc := range cs.MountChanges {
 		totalChanges += len(mc.Changes)
 	}
-	totalChanges += len(cs.GuestChanges)
 
 	if totalChanges == 0 {
 		_, _ = fmt.Fprintln(w, "\nNo changes detected.")
@@ -37,21 +36,6 @@ func PrintSummary(w io.Writer, cs *SessionChangeset) {
 		label := mountLabel(mc.Target)
 		_, _ = fmt.Fprintf(w, "\n%s (%s → %s):\n", label, mc.Source, mc.Target)
 		printChanges(w, mc.Changes)
-	}
-
-	// Print guest changes
-	if len(cs.GuestChanges) > 0 {
-		_, _ = fmt.Fprintf(w, "\nSystem (rootfs overlay):\n")
-		if len(cs.GuestChanges) > maxDisplayChanges {
-			for _, path := range cs.GuestChanges[:5] {
-				_, _ = fmt.Fprintf(w, "  ~ %s\n", path)
-			}
-			_, _ = fmt.Fprintf(w, "  (%d files total)\n", len(cs.GuestChanges))
-		} else {
-			for _, path := range cs.GuestChanges {
-				_, _ = fmt.Fprintf(w, "  ~ %s\n", path)
-			}
-		}
 	}
 }
 

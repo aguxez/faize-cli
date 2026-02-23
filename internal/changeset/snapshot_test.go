@@ -163,3 +163,79 @@ func TestParseGuestChanges_WithContent(t *testing.T) {
 	assert.Len(t, lines, 3)
 	assert.Equal(t, "/etc/resolv.conf", lines[0])
 }
+
+func TestFilterNoise_RemovesDirectories(t *testing.T) {
+	before := Snapshot{}
+	after := Snapshot{
+		"internal/cmd":          FileEntry{Path: "internal/cmd", IsDir: true},
+		"internal/cmd/start.go": FileEntry{Path: "internal/cmd/start.go", Size: 100},
+	}
+	changes := []Change{
+		{Path: "internal/cmd", Type: "modified"},
+		{Path: "internal/cmd/start.go", Type: "modified", NewSize: 100},
+	}
+	filtered := FilterNoise(changes, before, after)
+	assert.Len(t, filtered, 1)
+	assert.Equal(t, "internal/cmd/start.go", filtered[0].Path)
+}
+
+func TestFilterNoise_RemovesIgnoredPrefixes(t *testing.T) {
+	before := Snapshot{}
+	after := Snapshot{
+		".git/HEAD":              FileEntry{Path: ".git/HEAD", Size: 40},
+		".omc/state.json":       FileEntry{Path: ".omc/state.json", Size: 200},
+		".claude/settings.json": FileEntry{Path: ".claude/settings.json", Size: 50},
+		"main.go":               FileEntry{Path: "main.go", Size: 300},
+	}
+	changes := []Change{
+		{Path: ".git/HEAD", Type: "modified"},
+		{Path: ".omc/state.json", Type: "created"},
+		{Path: ".claude/settings.json", Type: "modified"},
+		{Path: "main.go", Type: "modified"},
+	}
+	filtered := FilterNoise(changes, before, after)
+	assert.Len(t, filtered, 1)
+	assert.Equal(t, "main.go", filtered[0].Path)
+}
+
+func TestFilterNoise_KeepsRegularFiles(t *testing.T) {
+	before := Snapshot{
+		"old.go": FileEntry{Path: "old.go", Size: 50},
+	}
+	after := Snapshot{
+		"old.go": FileEntry{Path: "old.go", Size: 100},
+		"new.go": FileEntry{Path: "new.go", Size: 200},
+	}
+	changes := Diff(before, after)
+	filtered := FilterNoise(changes, before, after)
+	assert.Len(t, filtered, 2)
+}
+
+func TestFilterPaths_RemovesIgnoredPrefixes(t *testing.T) {
+	changes := []Change{
+		{Path: ".git/HEAD", Type: "modified"},
+		{Path: ".omc/notepad.md", Type: "created"},
+		{Path: "src/main.go", Type: "modified"},
+	}
+	filtered := FilterPaths(changes)
+	assert.Len(t, filtered, 1)
+	assert.Equal(t, "src/main.go", filtered[0].Path)
+}
+
+func TestFilterNoise_EmptyInput(t *testing.T) {
+	filtered := FilterNoise(nil, Snapshot{}, Snapshot{})
+	assert.Nil(t, filtered)
+}
+
+func TestFilterPaths_ExactPrefixMatch(t *testing.T) {
+	// ".github" should NOT be filtered (doesn't match ".git" prefix)
+	changes := []Change{
+		{Path: ".github/workflows/ci.yml", Type: "created"},
+		{Path: ".gitignore", Type: "modified"},
+		{Path: ".git/HEAD", Type: "modified"},
+	}
+	filtered := FilterPaths(changes)
+	assert.Len(t, filtered, 2)
+	assert.Equal(t, ".github/workflows/ci.yml", filtered[0].Path)
+	assert.Equal(t, ".gitignore", filtered[1].Path)
+}
