@@ -118,7 +118,7 @@ func TestStartOAuthRelay(t *testing.T) {
 		t.Fatal(err)
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
-	ln.Close()
+	_ = ln.Close()
 
 	tmpDir := t.TempDir()
 	done := make(chan struct{})
@@ -134,7 +134,7 @@ func TestStartOAuthRelay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
@@ -158,7 +158,7 @@ func TestStartOAuthRelayPortConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	port := ln.Addr().(*net.TCPAddr).Port
 	portStr := fmt.Sprintf("%d", port)
