@@ -182,7 +182,7 @@ func TestFilterNoise_RemovesDirectories(t *testing.T) {
 func TestFilterNoise_RemovesIgnoredPrefixes(t *testing.T) {
 	before := Snapshot{}
 	after := Snapshot{
-		".git/HEAD":              FileEntry{Path: ".git/HEAD", Size: 40},
+		".git/HEAD":             FileEntry{Path: ".git/HEAD", Size: 40},
 		".omc/state.json":       FileEntry{Path: ".omc/state.json", Size: 200},
 		".claude/settings.json": FileEntry{Path: ".claude/settings.json", Size: 50},
 		"main.go":               FileEntry{Path: "main.go", Size: 300},
