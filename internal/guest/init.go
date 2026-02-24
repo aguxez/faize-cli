@@ -120,7 +120,7 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("  # Kill network log collector if running\n")
 	sb.WriteString("  [ -n \"$NETLOG_PID\" ] && kill $NETLOG_PID 2>/dev/null || true\n")
 	sb.WriteString("  # Kill dnsmasq if running\n")
-	sb.WriteString("  killall dnsmasq 2>/dev/null || true\n")
+	sb.WriteString("  [ -n \"$DNSMASQ_RUNNING\" ] && killall dnsmasq 2>/dev/null || true\n")
 	sb.WriteString("  # Kill child processes gracefully\n")
 	sb.WriteString("  kill -TERM $(jobs -p) 2>/dev/null || true\n")
 	sb.WriteString("  wait 2>/dev/null || true\n")
@@ -240,7 +240,8 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 		sb.WriteString("pid-file=\n")
 		sb.WriteString("DNSMASQ_EOF\n\n")
 		sb.WriteString("# Start dnsmasq (daemonizes by default)\n")
-		sb.WriteString("dnsmasq\n\n")
+		sb.WriteString("dnsmasq || { echo 'dnsmasq: failed to start' >&2; exit 1; }\n")
+		sb.WriteString("DNSMASQ_RUNNING=1\n\n")
 		sb.WriteString("# Point DNS at local dnsmasq\n")
 		sb.WriteString("echo 'nameserver 127.0.0.1' > /etc/resolv.conf\n\n")
 	} else {

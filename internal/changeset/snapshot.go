@@ -3,6 +3,7 @@ package changeset
 import (
 	"bufio"
 	"encoding/json"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -346,8 +347,8 @@ func ParseDNSLog(path string) (events []NetworkEvent, ipToDomain map[string]stri
 		if rm := dnsReplyRe.FindStringSubmatch(line); rm != nil {
 			domain := rm[2]
 			ip := rm[3]
-			// Only map IPv4 addresses (skip CNAME and other reply types)
-			if !strings.Contains(ip, ":") && ip != "<CNAME>" {
+			// Only map valid IP addresses (skip CNAME and other reply types)
+			if net.ParseIP(ip) != nil {
 				ipToDomain[ip] = domain
 			}
 		}
@@ -364,12 +365,18 @@ func ParseDNSLog(path string) (events []NetworkEvent, ipToDomain map[string]stri
 
 // CollectNetworkEvents reads both network.log (iptables) and dns.log (dnsmasq),
 // then annotates iptables connection events with domain names from DNS replies.
-func CollectNetworkEvents(bootstrapDir string) []NetworkEvent {
+func CollectNetworkEvents(bootstrapDir string) ([]NetworkEvent, error) {
 	// Parse DNS log → get DNS events + IP→domain map
-	dnsEvents, ipToDomain, _ := ParseDNSLog(filepath.Join(bootstrapDir, "dns.log"))
+	dnsEvents, ipToDomain, err := ParseDNSLog(filepath.Join(bootstrapDir, "dns.log"))
+	if err != nil {
+		return nil, err
+	}
 
 	// Parse iptables network log → get connection/deny events
-	netEvents, _ := ParseNetworkLog(filepath.Join(bootstrapDir, "network.log"))
+	netEvents, err := ParseNetworkLog(filepath.Join(bootstrapDir, "network.log"))
+	if err != nil {
+		return nil, err
+	}
 
 	// Annotate connection events with domain names from DNS replies
 	for i := range netEvents {
@@ -382,7 +389,7 @@ func CollectNetworkEvents(bootstrapDir string) []NetworkEvent {
 	var all []NetworkEvent
 	all = append(all, dnsEvents...)
 	all = append(all, netEvents...)
-	return all
+	return all, nil
 }
 
 // defaultIgnorePrefixes are path prefixes for internal state that should not
