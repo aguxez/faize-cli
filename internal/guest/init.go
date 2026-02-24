@@ -117,6 +117,8 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("  echo 'Shutting down...'\n")
 	sb.WriteString("  # Kill resize watcher if running\n")
 	sb.WriteString("  [ -n \"$RESIZE_WATCHER_PID\" ] && kill $RESIZE_WATCHER_PID 2>/dev/null || true\n")
+	sb.WriteString("  # Kill network log collector if running\n")
+	sb.WriteString("  [ -n \"$NETLOG_PID\" ] && kill $NETLOG_PID 2>/dev/null || true\n")
 	sb.WriteString("  # Kill child processes gracefully\n")
 	sb.WriteString("  kill -TERM $(jobs -p) 2>/dev/null || true\n")
 	sb.WriteString("  wait 2>/dev/null || true\n")
@@ -249,6 +251,8 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 			sb.WriteString("iptables -P OUTPUT DROP\n")
 			sb.WriteString("iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT\n")
 			sb.WriteString("iptables -A OUTPUT -o lo -j ACCEPT\n")
+			sb.WriteString("# Log denied connections\n")
+			sb.WriteString("iptables -A OUTPUT -j LOG --log-prefix \"FAIZE_DENY: \" --log-level 4 -m limit --limit 5/sec 2>/dev/null || echo 'Warning: network logging unavailable (missing xt_LOG kernel module)'\n")
 			sb.WriteString("echo 'Network blocked (loopback only)'\n\n")
 		} else if len(policy.Domains) > 0 || len(policy.Wildcards) > 0 {
 			// Domain-based allowlist (with optional wildcards)
@@ -265,6 +269,8 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 			sb.WriteString("iptables -P OUTPUT DROP\n")
 			sb.WriteString("iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT\n")
 			sb.WriteString("iptables -A OUTPUT -o lo -j ACCEPT\n\n")
+			sb.WriteString("# Log all new outbound connections (non-terminating)\n")
+			sb.WriteString("iptables -A OUTPUT -m state --state NEW -j LOG --log-prefix \"FAIZE_NET: \" --log-level 4 -m limit --limit 10/sec 2>/dev/null || echo 'Warning: network logging unavailable (missing xt_LOG kernel module)'\n\n")
 			sb.WriteString("# Allow DNS queries only to known resolvers\n")
 			sb.WriteString("iptables -A OUTPUT -p udp -d 8.8.8.8 --dport 53 -j ACCEPT\n")
 			sb.WriteString("iptables -A OUTPUT -p udp -d 1.1.1.1 --dport 53 -j ACCEPT\n")
@@ -333,8 +339,22 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 			sb.WriteString("  echo '=== iptables OUTPUT rules ==='\n")
 			sb.WriteString("  iptables -L OUTPUT -n 2>/dev/null | head -20 || echo 'Failed to list iptables rules'\n")
 			sb.WriteString("fi\n\n")
+			sb.WriteString("# Log denied connections (catch-all before policy DROP)\n")
+			sb.WriteString("iptables -A OUTPUT -j LOG --log-prefix \"FAIZE_DENY: \" --log-level 4 -m limit --limit 5/sec 2>/dev/null || echo 'Warning: network logging unavailable (missing xt_LOG kernel module)'\n\n")
 			sb.WriteString("[ \"$FAIZE_DEBUG\" = \"1\" ] && echo 'Network policy applied'\n\n")
 		}
+	}
+
+	// Start network log collector (only when iptables rules are active)
+	if policy != nil && !policy.AllowAll {
+		sb.WriteString("# Background network log collector\n")
+		sb.WriteString("(\n")
+		sb.WriteString("  while true; do\n")
+		sb.WriteString("    dmesg -c 2>/dev/null | grep 'FAIZE_' >> /mnt/bootstrap/network.log 2>/dev/null\n")
+		sb.WriteString("    sleep 2\n")
+		sb.WriteString("  done\n")
+		sb.WriteString(") &\n")
+		sb.WriteString("NETLOG_PID=$!\n\n")
 	}
 
 	// Fix ownership for writable directories
