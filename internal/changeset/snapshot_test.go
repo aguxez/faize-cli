@@ -289,3 +289,94 @@ func TestParseNetworkLog_EmptyFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, events)
 }
+
+func TestParseDNSLog_ParsesQueries(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dns.log")
+	content := `Feb 24 12:00:01 dnsmasq[42]: query[A] api.anthropic.com from 127.0.0.1
+Feb 24 12:00:01 dnsmasq[42]: reply api.anthropic.com is 104.18.32.47
+Feb 24 12:00:02 dnsmasq[42]: query[A] github.com from 127.0.0.1
+Feb 24 12:00:02 dnsmasq[42]: reply github.com is 140.82.114.4
+Feb 24 12:00:03 dnsmasq[42]: query[AAAA] api.anthropic.com from 127.0.0.1
+`
+	_ = os.WriteFile(path, []byte(content), 0644)
+
+	events, _, err := ParseDNSLog(path)
+	require.NoError(t, err)
+	// Should deduplicate: api.anthropic.com appears twice (A + AAAA) but only one event
+	require.Len(t, events, 2)
+	assert.Equal(t, "DNS", events[0].Action)
+	assert.Equal(t, "api.anthropic.com", events[0].Domain)
+	assert.Equal(t, "DNS", events[1].Action)
+	assert.Equal(t, "github.com", events[1].Domain)
+}
+
+func TestParseDNSLog_BuildsIPMap(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dns.log")
+	content := `Feb 24 12:00:01 dnsmasq[42]: query[A] api.anthropic.com from 127.0.0.1
+Feb 24 12:00:01 dnsmasq[42]: reply api.anthropic.com is 104.18.32.47
+Feb 24 12:00:01 dnsmasq[42]: reply api.anthropic.com is 104.18.32.48
+Feb 24 12:00:02 dnsmasq[42]: query[A] github.com from 127.0.0.1
+Feb 24 12:00:02 dnsmasq[42]: reply github.com is 140.82.114.4
+`
+	_ = os.WriteFile(path, []byte(content), 0644)
+
+	_, ipMap, err := ParseDNSLog(path)
+	require.NoError(t, err)
+	assert.Equal(t, "api.anthropic.com", ipMap["104.18.32.47"])
+	assert.Equal(t, "api.anthropic.com", ipMap["104.18.32.48"])
+	assert.Equal(t, "github.com", ipMap["140.82.114.4"])
+}
+
+func TestParseDNSLog_MissingFile(t *testing.T) {
+	events, ipMap, err := ParseDNSLog("/nonexistent/dns.log")
+	require.NoError(t, err)
+	assert.Empty(t, events)
+	assert.Empty(t, ipMap)
+}
+
+func TestCollectNetworkEvents_AnnotatesConnections(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write DNS log
+	dnsContent := `Feb 24 12:00:01 dnsmasq[42]: query[A] api.anthropic.com from 127.0.0.1
+Feb 24 12:00:01 dnsmasq[42]: reply api.anthropic.com is 104.18.32.47
+Feb 24 12:00:02 dnsmasq[42]: query[A] github.com from 127.0.0.1
+Feb 24 12:00:02 dnsmasq[42]: reply github.com is 140.82.114.4
+`
+	_ = os.WriteFile(filepath.Join(dir, "dns.log"), []byte(dnsContent), 0644)
+
+	// Write network log (iptables)
+	netContent := `[  123.456] FAIZE_NET: IN= OUT=eth0 SRC=10.0.2.15 DST=104.18.32.47 LEN=60 TOS=0x00 PROTO=TCP SPT=45678 DPT=443
+[  124.789] FAIZE_NET: IN= OUT=eth0 SRC=10.0.2.15 DST=140.82.114.4 LEN=60 TOS=0x00 PROTO=TCP SPT=45679 DPT=443
+[  125.012] FAIZE_DENY: IN= OUT=eth0 SRC=10.0.2.15 DST=1.2.3.4 LEN=60 TOS=0x00 PROTO=TCP SPT=12345 DPT=80
+`
+	_ = os.WriteFile(filepath.Join(dir, "network.log"), []byte(netContent), 0644)
+
+	events := CollectNetworkEvents(dir)
+
+	// Should have: 2 DNS events + 3 network events = 5 total
+	require.Len(t, events, 5)
+
+	// First 2 are DNS events
+	assert.Equal(t, "DNS", events[0].Action)
+	assert.Equal(t, "api.anthropic.com", events[0].Domain)
+	assert.Equal(t, "DNS", events[1].Action)
+	assert.Equal(t, "github.com", events[1].Domain)
+
+	// Connection to 104.18.32.47 should be annotated with api.anthropic.com
+	assert.Equal(t, "CONN", events[2].Action)
+	assert.Equal(t, "104.18.32.47", events[2].DstIP)
+	assert.Equal(t, "api.anthropic.com", events[2].Domain)
+
+	// Connection to 140.82.114.4 should be annotated with github.com
+	assert.Equal(t, "CONN", events[3].Action)
+	assert.Equal(t, "140.82.114.4", events[3].DstIP)
+	assert.Equal(t, "github.com", events[3].Domain)
+
+	// Denied connection to unknown IP should have no domain
+	assert.Equal(t, "DENY", events[4].Action)
+	assert.Equal(t, "1.2.3.4", events[4].DstIP)
+	assert.Equal(t, "", events[4].Domain)
+}

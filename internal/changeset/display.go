@@ -137,10 +137,12 @@ func printNetworkSummary(w io.Writer, events []NetworkEvent) {
 	_, _ = fmt.Fprintln(w, "\nNetwork activity")
 	_, _ = fmt.Fprintln(w, strings.Repeat("─", 40))
 
-	// Count by type and collect unique destinations
-	var conns, denies []NetworkEvent
+	// Separate by type
+	var dnsEvents, conns, denies []NetworkEvent
 	for _, e := range events {
 		switch e.Action {
+		case "DNS":
+			dnsEvents = append(dnsEvents, e)
 		case "DENY":
 			denies = append(denies, e)
 		default:
@@ -148,33 +150,35 @@ func printNetworkSummary(w io.Writer, events []NetworkEvent) {
 		}
 	}
 
-	// DNS queries (UDP port 53)
-	var dnsCount int
-	dnsServers := make(map[string]int)
-	for _, e := range conns {
-		if e.DstPort == 53 {
-			dnsCount++
-			dnsServers[e.DstIP]++
+	// DNS queries — show domain names
+	if len(dnsEvents) > 0 {
+		domains := make([]string, 0, len(dnsEvents))
+		for _, e := range dnsEvents {
+			domains = append(domains, e.Domain)
 		}
-	}
-	if dnsCount > 0 {
-		serverParts := make([]string, 0, len(dnsServers))
-		for ip, count := range dnsServers {
-			serverParts = append(serverParts, fmt.Sprintf("%s: %d", ip, count))
+		display := strings.Join(domains, ", ")
+		if len(domains) > 5 {
+			display = strings.Join(domains[:5], ", ") + fmt.Sprintf(", +%d more", len(domains)-5)
 		}
-		_, _ = fmt.Fprintf(w, "  DNS queries: %d (%s)\n", dnsCount, strings.Join(serverParts, ", "))
+		_, _ = fmt.Fprintf(w, "  DNS queries: %d (%s)\n", len(dnsEvents), display)
 	}
 
-	// Non-DNS connections
-	var connCount int
-	connDests := make(map[string]bool)
+	// Non-DNS connections — show domain when available, fall back to IP
+	var nonDNSConns []NetworkEvent
 	for _, e := range conns {
 		if e.DstPort != 53 {
-			connCount++
-			connDests[fmt.Sprintf("%s:%d", e.DstIP, e.DstPort)] = true
+			nonDNSConns = append(nonDNSConns, e)
 		}
 	}
-	if connCount > 0 {
+	if len(nonDNSConns) > 0 {
+		connDests := make(map[string]bool)
+		for _, e := range nonDNSConns {
+			host := e.DstIP
+			if e.Domain != "" {
+				host = e.Domain
+			}
+			connDests[fmt.Sprintf("%s:%d", host, e.DstPort)] = true
+		}
 		destList := make([]string, 0, len(connDests))
 		for dest := range connDests {
 			destList = append(destList, dest)
@@ -184,14 +188,18 @@ func printNetworkSummary(w io.Writer, events []NetworkEvent) {
 		if len(destList) > 5 {
 			display = strings.Join(destList[:5], ", ") + fmt.Sprintf(" (+%d more)", len(destList)-5)
 		}
-		_, _ = fmt.Fprintf(w, "  Connections: %d (%s)\n", connCount, display)
+		_, _ = fmt.Fprintf(w, "  Connections: %d (%s)\n", len(nonDNSConns), display)
 	}
 
-	// Denied connections
+	// Denied connections — same domain annotation
 	if len(denies) > 0 {
 		denyDests := make(map[string]bool)
 		for _, e := range denies {
-			denyDests[fmt.Sprintf("%s:%d", e.DstIP, e.DstPort)] = true
+			host := e.DstIP
+			if e.Domain != "" {
+				host = e.Domain
+			}
+			denyDests[fmt.Sprintf("%s:%d", host, e.DstPort)] = true
 		}
 		destList := make([]string, 0, len(denyDests))
 		for dest := range denyDests {
