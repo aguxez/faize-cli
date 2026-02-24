@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/faize-ai/faize/internal/changeset"
@@ -269,6 +270,17 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 	Debug("VM started successfully")
 
+	// Timeout enforcement: stop the VM when the timeout expires
+	var timedOut atomic.Bool
+	if timeoutDuration > 0 {
+		timer := time.AfterFunc(timeoutDuration, func() {
+			timedOut.Store(true)
+			fmt.Printf("\nSession timeout (%s) reached. Stopping...\n", timeoutDuration)
+			_ = manager.Stop(sess.ID)
+		})
+		defer timer.Stop()
+	}
+
 	// Take pre-snapshots of rw mounts for change tracking
 	type mountSnapshot struct {
 		source string
@@ -312,8 +324,28 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	// Attach to console — session stops when we return
 	fmt.Println("Attaching to console... (~. to detach)")
-	if err := manager.Attach(sess.ID); err != nil && !errors.Is(err, vm.ErrUserDetach) {
-		return fmt.Errorf("console error: %w", err)
+	attachErr := manager.Attach(sess.ID)
+	if attachErr != nil && !errors.Is(attachErr, vm.ErrUserDetach) {
+		return fmt.Errorf("console error: %w", attachErr)
+	}
+
+	// Determine exit reason and persist session metadata
+	exitReason := "normal"
+	if timedOut.Load() {
+		exitReason = "timeout"
+	} else if errors.Is(attachErr, vm.ErrUserDetach) {
+		exitReason = "detach"
+	}
+	now := time.Now()
+	sess.Timeout = startTimeout
+	sess.StoppedAt = &now
+	sess.ExitReason = exitReason
+	sess.Status = "stopped"
+	store, storeErr := session.NewStore()
+	if storeErr == nil {
+		if saveErr := store.Save(sess); saveErr != nil {
+			Debug("Failed to save session: %v", saveErr)
+		}
 	}
 
 	// Post-session change tracking
