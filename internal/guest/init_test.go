@@ -14,10 +14,10 @@ func TestGenerateClaudeInitScript_DNSForcedWithAllowlist(t *testing.T) {
 	// This prevents the bug where DHCP sets a different DNS server that iptables then blocks.
 
 	tests := []struct {
-		name           string
-		policy         *network.Policy
-		wantDNSForced  bool
-		wantIPTables   bool
+		name          string
+		policy        *network.Policy
+		wantDNSForced bool
+		wantIPTables  bool
 	}{
 		{
 			name: "domain allowlist forces DNS",

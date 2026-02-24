@@ -77,8 +77,8 @@ func TestExpandPaths(t *testing.T) {
 			expected: []string{filepath.Join(home, "project:rw")},
 		},
 		{
-			name:     "multiple paths with mixed mount options",
-			input:    []string{"~/.ssh", "~/.gitconfig:ro", "~/code:rw"},
+			name:  "multiple paths with mixed mount options",
+			input: []string{"~/.ssh", "~/.gitconfig:ro", "~/code:rw"},
 			expected: []string{
 				filepath.Join(home, ".ssh"),
 				filepath.Join(home, ".gitconfig:ro"),

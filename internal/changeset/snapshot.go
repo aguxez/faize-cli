@@ -94,8 +94,8 @@ func Take(root string) (Snapshot, error) {
 
 // Change represents a single file change.
 type Change struct {
-	Path    string `json:"path"`              // relative to mount root
-	Type    string `json:"type"`              // "created", "modified", "deleted"
+	Path    string `json:"path"` // relative to mount root
+	Type    string `json:"type"` // "created", "modified", "deleted"
 	OldSize int64  `json:"old_size,omitempty"`
 	NewSize int64  `json:"new_size,omitempty"`
 }
@@ -149,8 +149,8 @@ func Diff(before, after Snapshot) []Change {
 
 // MountChanges groups changes by mount source.
 type MountChanges struct {
-	Source  string   `json:"source"`  // host path
-	Target  string   `json:"target"`  // guest path
+	Source  string   `json:"source"` // host path
+	Target  string   `json:"target"` // guest path
 	Changes []Change `json:"changes"`
 }
 

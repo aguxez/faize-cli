@@ -8,15 +8,15 @@ import (
 )
 
 type Config struct {
-	ProjectDir    string
-	Mounts        []session.VMMount
-	Network       []string
-	NetworkPolicy *network.Policy
-	CPUs          int
-	Memory        string
-	Timeout       time.Duration
-	ClaudeMode    bool
-	HostClaudeDir string
+	ProjectDir     string
+	Mounts         []session.VMMount
+	Network        []string
+	NetworkPolicy  *network.Policy
+	CPUs           int
+	Memory         string
+	Timeout        time.Duration
+	ClaudeMode     bool
+	HostClaudeDir  string
 	ToolchainDir   string
 	CredentialsDir string
 	ExtraDeps      []string
