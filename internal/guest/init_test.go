@@ -230,3 +230,74 @@ func TestGenerateRCLocal(t *testing.T) {
 		t.Error("Missing exit 0")
 	}
 }
+
+func TestGenerateClaudeInitScript_NetworkLogRules(t *testing.T) {
+	tests := []struct {
+		name           string
+		policy         *network.Policy
+		wantNetLog     bool // FAIZE_NET LOG rule
+		wantDenyLog    bool // FAIZE_DENY LOG rule
+		wantDmesgWatch bool // background dmesg watcher
+	}{
+		{
+			name: "domain allowlist has both LOG rules and watcher",
+			policy: &network.Policy{
+				Domains: []string{"api.anthropic.com"},
+			},
+			wantNetLog:     true,
+			wantDenyLog:    true,
+			wantDmesgWatch: true,
+		},
+		{
+			name: "blocked policy has deny LOG and watcher",
+			policy: &network.Policy{
+				Blocked: true,
+			},
+			wantNetLog:     false, // blocked doesn't need NEW connection logging
+			wantDenyLog:    true,
+			wantDmesgWatch: true,
+		},
+		{
+			name: "allow all has no LOG rules and no watcher",
+			policy: &network.Policy{
+				AllowAll: true,
+			},
+			wantNetLog:     false,
+			wantDenyLog:    false,
+			wantDmesgWatch: false,
+		},
+		{
+			name:           "nil policy has no LOG rules and no watcher",
+			policy:         nil,
+			wantNetLog:     false,
+			wantDenyLog:    false,
+			wantDmesgWatch: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			script := GenerateClaudeInitScript(
+				[]session.VMMount{},
+				"/workspace",
+				tt.policy,
+				false,
+				nil,
+			)
+
+			hasNetLog := strings.Contains(script, "FAIZE_NET: ")
+			hasDenyLog := strings.Contains(script, "FAIZE_DENY: ")
+			hasDmesgWatch := strings.Contains(script, "dmesg -c") && strings.Contains(script, "NETLOG_PID")
+
+			if hasNetLog != tt.wantNetLog {
+				t.Errorf("FAIZE_NET LOG rule = %v, want %v", hasNetLog, tt.wantNetLog)
+			}
+			if hasDenyLog != tt.wantDenyLog {
+				t.Errorf("FAIZE_DENY LOG rule = %v, want %v", hasDenyLog, tt.wantDenyLog)
+			}
+			if hasDmesgWatch != tt.wantDmesgWatch {
+				t.Errorf("dmesg watcher = %v, want %v", hasDmesgWatch, tt.wantDmesgWatch)
+			}
+		})
+	}
+}

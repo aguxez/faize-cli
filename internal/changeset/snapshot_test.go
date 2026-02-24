@@ -239,3 +239,53 @@ func TestFilterPaths_ExactPrefixMatch(t *testing.T) {
 	assert.Equal(t, ".github/workflows/ci.yml", filtered[0].Path)
 	assert.Equal(t, ".gitignore", filtered[1].Path)
 }
+
+func TestParseNetworkLog_MissingFile(t *testing.T) {
+	events, err := ParseNetworkLog("/nonexistent/network.log")
+	require.NoError(t, err)
+	assert.Empty(t, events)
+}
+
+func TestParseNetworkLog_ParsesEvents(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "network.log")
+	content := `[  123.456] FAIZE_NET: IN= OUT=eth0 SRC=10.0.2.15 DST=140.82.114.4 LEN=60 TOS=0x00 PROTO=TCP SPT=45678 DPT=443
+[  124.789] FAIZE_NET: IN= OUT=eth0 SRC=10.0.2.15 DST=8.8.8.8 LEN=56 TOS=0x00 PROTO=UDP SPT=34567 DPT=53
+[  125.012] FAIZE_DENY: IN= OUT=eth0 SRC=10.0.2.15 DST=1.2.3.4 LEN=60 TOS=0x00 PROTO=TCP SPT=12345 DPT=80
+some garbage line that should be skipped
+`
+	_ = os.WriteFile(path, []byte(content), 0644)
+
+	events, err := ParseNetworkLog(path)
+	require.NoError(t, err)
+	require.Len(t, events, 3)
+
+	// First event: TCP connection to github
+	assert.Equal(t, "CONN", events[0].Action)
+	assert.Equal(t, "TCP", events[0].Proto)
+	assert.Equal(t, "140.82.114.4", events[0].DstIP)
+	assert.Equal(t, 443, events[0].DstPort)
+	assert.Equal(t, 45678, events[0].SrcPort)
+
+	// Second event: DNS query
+	assert.Equal(t, "CONN", events[1].Action)
+	assert.Equal(t, "UDP", events[1].Proto)
+	assert.Equal(t, "8.8.8.8", events[1].DstIP)
+	assert.Equal(t, 53, events[1].DstPort)
+
+	// Third event: denied connection
+	assert.Equal(t, "DENY", events[2].Action)
+	assert.Equal(t, "TCP", events[2].Proto)
+	assert.Equal(t, "1.2.3.4", events[2].DstIP)
+	assert.Equal(t, 80, events[2].DstPort)
+}
+
+func TestParseNetworkLog_EmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "network.log")
+	_ = os.WriteFile(path, []byte(""), 0644)
+
+	events, err := ParseNetworkLog(path)
+	require.NoError(t, err)
+	assert.Empty(t, events)
+}

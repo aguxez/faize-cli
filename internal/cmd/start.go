@@ -373,10 +373,14 @@ func runStart(cmd *cobra.Command, args []string) error {
 		bootstrapDir := filepath.Join(home, ".faize", "sessions", sess.ID, "bootstrap")
 		guestChanges, _ := changeset.ParseGuestChanges(filepath.Join(bootstrapDir, "guest-changes.txt"))
 
+		// Read network log from bootstrap dir
+		networkEvents, _ := changeset.ParseNetworkLog(filepath.Join(bootstrapDir, "network.log"))
+
 		cs := &changeset.SessionChangeset{
-			SessionID:    sess.ID,
-			MountChanges: mountChanges,
-			GuestChanges: guestChanges,
+			SessionID:     sess.ID,
+			MountChanges:  mountChanges,
+			GuestChanges:  guestChanges,
+			NetworkEvents: networkEvents,
 		}
 
 		// Display summary

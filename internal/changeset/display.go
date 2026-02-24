@@ -3,6 +3,7 @@ package changeset
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 )
 
@@ -19,7 +20,7 @@ func PrintSummary(w io.Writer, cs *SessionChangeset) {
 		totalChanges += len(mc.Changes)
 	}
 
-	if totalChanges == 0 {
+	if totalChanges == 0 && len(cs.NetworkEvents) == 0 {
 		_, _ = fmt.Fprintln(w, "\nNo changes detected.")
 		return
 	}
@@ -36,6 +37,11 @@ func PrintSummary(w io.Writer, cs *SessionChangeset) {
 		label := mountLabel(mc.Target)
 		_, _ = fmt.Fprintf(w, "\n%s (%s → %s):\n", label, mc.Source, mc.Target)
 		printChanges(w, mc.Changes)
+	}
+
+	// Print network activity summary
+	if len(cs.NetworkEvents) > 0 {
+		printNetworkSummary(w, cs.NetworkEvents)
 	}
 }
 
@@ -123,5 +129,75 @@ func formatSize(bytes int64) string {
 		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(1<<10))
 	default:
 		return fmt.Sprintf("%d B", bytes)
+	}
+}
+
+// printNetworkSummary prints a summary of network events grouped by action type.
+func printNetworkSummary(w io.Writer, events []NetworkEvent) {
+	_, _ = fmt.Fprintln(w, "\nNetwork activity")
+	_, _ = fmt.Fprintln(w, strings.Repeat("─", 40))
+
+	// Count by type and collect unique destinations
+	var conns, denies []NetworkEvent
+	for _, e := range events {
+		switch e.Action {
+		case "DENY":
+			denies = append(denies, e)
+		default:
+			conns = append(conns, e)
+		}
+	}
+
+	// DNS queries (UDP port 53)
+	var dnsCount int
+	dnsServers := make(map[string]int)
+	for _, e := range conns {
+		if e.DstPort == 53 {
+			dnsCount++
+			dnsServers[e.DstIP]++
+		}
+	}
+	if dnsCount > 0 {
+		serverParts := make([]string, 0, len(dnsServers))
+		for ip, count := range dnsServers {
+			serverParts = append(serverParts, fmt.Sprintf("%s: %d", ip, count))
+		}
+		_, _ = fmt.Fprintf(w, "  DNS queries: %d (%s)\n", dnsCount, strings.Join(serverParts, ", "))
+	}
+
+	// Non-DNS connections
+	var connCount int
+	connDests := make(map[string]bool)
+	for _, e := range conns {
+		if e.DstPort != 53 {
+			connCount++
+			connDests[fmt.Sprintf("%s:%d", e.DstIP, e.DstPort)] = true
+		}
+	}
+	if connCount > 0 {
+		destList := make([]string, 0, len(connDests))
+		for dest := range connDests {
+			destList = append(destList, dest)
+		}
+		sort.Strings(destList)
+		display := strings.Join(destList, ", ")
+		if len(destList) > 5 {
+			display = strings.Join(destList[:5], ", ") + fmt.Sprintf(" (+%d more)", len(destList)-5)
+		}
+		_, _ = fmt.Fprintf(w, "  Connections: %d (%s)\n", connCount, display)
+	}
+
+	// Denied connections
+	if len(denies) > 0 {
+		denyDests := make(map[string]bool)
+		for _, e := range denies {
+			denyDests[fmt.Sprintf("%s:%d", e.DstIP, e.DstPort)] = true
+		}
+		destList := make([]string, 0, len(denyDests))
+		for dest := range denyDests {
+			destList = append(destList, dest)
+		}
+		sort.Strings(destList)
+		_, _ = fmt.Fprintf(w, "  Denied: %d (%s)\n", len(denies), strings.Join(destList, ", "))
 	}
 }

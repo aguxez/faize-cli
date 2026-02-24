@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -154,11 +156,22 @@ type MountChanges struct {
 	Changes []Change `json:"changes"`
 }
 
+// NetworkEvent represents a parsed network event from guest-side iptables LOG rules.
+type NetworkEvent struct {
+	Timestamp string `json:"timestamp"`
+	Action    string `json:"action"`           // "CONN" or "DENY"
+	Proto     string `json:"proto"`            // "TCP", "UDP"
+	DstIP     string `json:"dst_ip"`
+	DstPort   int    `json:"dst_port"`
+	SrcPort   int    `json:"src_port,omitempty"`
+}
+
 // SessionChangeset is the complete changeset for a session.
 type SessionChangeset struct {
-	SessionID    string         `json:"session_id"`
-	MountChanges []MountChanges `json:"mount_changes"`
-	GuestChanges []string       `json:"guest_changes"` // lines from guest-changes.txt
+	SessionID     string         `json:"session_id"`
+	MountChanges  []MountChanges `json:"mount_changes"`
+	GuestChanges  []string       `json:"guest_changes"` // lines from guest-changes.txt
+	NetworkEvents []NetworkEvent `json:"network_events,omitempty"`
 }
 
 // Save persists a snapshot to JSON file.
@@ -233,6 +246,61 @@ func ParseGuestChanges(path string) ([]string, error) {
 		return []string{}, nil
 	}
 	return lines, nil
+}
+
+// networkLogRe matches iptables LOG lines from dmesg with FAIZE_ prefixes.
+// Example line: "FAIZE_NET: IN= OUT=eth0 SRC=10.0.2.15 DST=140.82.114.4 ... PROTO=TCP SPT=45678 DPT=443"
+// Example line: "FAIZE_DENY: IN= OUT=eth0 SRC=10.0.2.15 DST=1.2.3.4 ... PROTO=TCP SPT=12345 DPT=80"
+var networkLogRe = regexp.MustCompile(
+	`FAIZE_(NET|DENY):.*?SRC=(\S+)\s+DST=(\S+).*?PROTO=(\S+)(?:.*?SPT=(\d+))?(?:.*?DPT=(\d+))?`,
+)
+
+// ParseNetworkLog reads a network.log file (dmesg output with FAIZE_ prefixes)
+// and returns structured NetworkEvent entries.
+// Returns empty slice and nil error if the file doesn't exist.
+func ParseNetworkLog(path string) ([]NetworkEvent, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []NetworkEvent{}, nil
+		}
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+
+	var events []NetworkEvent
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		matches := networkLogRe.FindStringSubmatch(line)
+		if matches == nil {
+			continue
+		}
+
+		action := "CONN"
+		if matches[1] == "DENY" {
+			action = "DENY"
+		}
+
+		dstPort, _ := strconv.Atoi(matches[6])
+		srcPort, _ := strconv.Atoi(matches[5])
+
+		events = append(events, NetworkEvent{
+			Action:  action,
+			Proto:   matches[4],
+			DstIP:   matches[3],
+			DstPort: dstPort,
+			SrcPort: srcPort,
+		})
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	if events == nil {
+		return []NetworkEvent{}, nil
+	}
+	return events, nil
 }
 
 // defaultIgnorePrefixes are path prefixes for internal state that should not
