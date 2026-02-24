@@ -188,7 +188,7 @@ func printNetworkSummary(w io.Writer, events []NetworkEvent) {
 		if len(destList) > 5 {
 			display = strings.Join(destList[:5], ", ") + fmt.Sprintf(" (+%d more)", len(destList)-5)
 		}
-		_, _ = fmt.Fprintf(w, "  Connections: %d (%s)\n", len(nonDNSConns), display)
+		_, _ = fmt.Fprintf(w, "  Connections: %d (%s)\n", len(connDests), display)
 	}
 
 	// Denied connections — same domain annotation
@@ -206,6 +206,6 @@ func printNetworkSummary(w io.Writer, events []NetworkEvent) {
 			destList = append(destList, dest)
 		}
 		sort.Strings(destList)
-		_, _ = fmt.Fprintf(w, "  Denied: %d (%s)\n", len(denies), strings.Join(destList, ", "))
+		_, _ = fmt.Fprintf(w, "  Denied: %d (%s)\n", len(denyDests), strings.Join(destList, ", "))
 	}
 }

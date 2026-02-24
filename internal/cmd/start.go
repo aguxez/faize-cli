@@ -374,7 +374,10 @@ func runStart(cmd *cobra.Command, args []string) error {
 		guestChanges, _ := changeset.ParseGuestChanges(filepath.Join(bootstrapDir, "guest-changes.txt"))
 
 		// Read network + DNS logs from bootstrap dir
-		networkEvents := changeset.CollectNetworkEvents(bootstrapDir)
+		networkEvents, netErr := changeset.CollectNetworkEvents(bootstrapDir)
+		if netErr != nil {
+			Debug("Failed to collect network events: %v", netErr)
+		}
 
 		cs := &changeset.SessionChangeset{
 			SessionID:     sess.ID,

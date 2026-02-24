@@ -354,7 +354,8 @@ Feb 24 12:00:02 dnsmasq[42]: reply github.com is 140.82.114.4
 `
 	_ = os.WriteFile(filepath.Join(dir, "network.log"), []byte(netContent), 0644)
 
-	events := CollectNetworkEvents(dir)
+	events, err := CollectNetworkEvents(dir)
+	require.NoError(t, err)
 
 	// Should have: 2 DNS events + 3 network events = 5 total
 	require.Len(t, events, 5)

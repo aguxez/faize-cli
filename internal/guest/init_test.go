@@ -359,7 +359,7 @@ func TestGenerateClaudeInitScript_DnsmasqSetup(t *testing.T) {
 			hasDnsmasqConfig := strings.Contains(script, "cat > /etc/dnsmasq.conf")
 			hasDnsmasqStart := strings.Contains(script, "dnsmasq\n")
 			hasLocalhost := strings.Contains(script, "echo 'nameserver 127.0.0.1' > /etc/resolv.conf")
-			hasDnsmasqKill := strings.Contains(script, "killall dnsmasq")
+			hasDnsmasqKill := strings.Contains(script, "DNSMASQ_RUNNING=1")
 			hasLogQueries := strings.Contains(script, "log-queries")
 			hasDNSLogFacility := strings.Contains(script, "log-facility=/mnt/bootstrap/dns.log")
 
@@ -373,9 +373,9 @@ func TestGenerateClaudeInitScript_DnsmasqSetup(t *testing.T) {
 				t.Errorf("resolv.conf localhost = %v, want %v", hasLocalhost, tt.wantLocalhost)
 			}
 
-			// Cleanup handler should always have dnsmasq kill (it's unconditional in cleanup)
-			if !hasDnsmasqKill {
-				t.Error("Missing dnsmasq kill in cleanup handler")
+			// Cleanup handler should have conditional dnsmasq kill only when dnsmasq is configured
+			if hasDnsmasqKill != tt.wantDnsmasq {
+				t.Errorf("dnsmasq kill in cleanup = %v, want %v", hasDnsmasqKill, tt.wantDnsmasq)
 			}
 
 			if tt.wantDnsmasq {
