@@ -9,9 +9,9 @@ import (
 )
 
 func TestGenerateClaudeInitScript_DNSForcedWithAllowlist(t *testing.T) {
-	// This test verifies that when a domain allowlist is applied,
-	// /etc/resolv.conf is forced to use 8.8.8.8/1.1.1.1 BEFORE iptables rules.
-	// This prevents the bug where DHCP sets a different DNS server that iptables then blocks.
+	// This test verifies that when network restrictions are active,
+	// dnsmasq is configured as a local DNS forwarder BEFORE iptables rules.
+	// dnsmasq forwards to 8.8.8.8/1.1.1.1 which iptables allows through.
 
 	tests := []struct {
 		name          string
@@ -20,7 +20,7 @@ func TestGenerateClaudeInitScript_DNSForcedWithAllowlist(t *testing.T) {
 		wantIPTables  bool
 	}{
 		{
-			name: "domain allowlist forces DNS",
+			name: "domain allowlist forces DNS via dnsmasq",
 			policy: &network.Policy{
 				Domains: []string{"api.anthropic.com", "github.com"},
 			},
@@ -28,7 +28,7 @@ func TestGenerateClaudeInitScript_DNSForcedWithAllowlist(t *testing.T) {
 			wantIPTables:  true,
 		},
 		{
-			name: "wildcard allowlist forces DNS",
+			name: "wildcard allowlist forces DNS via dnsmasq",
 			policy: &network.Policy{
 				Wildcards: []string{"*.example.com"},
 			},
@@ -36,7 +36,7 @@ func TestGenerateClaudeInitScript_DNSForcedWithAllowlist(t *testing.T) {
 			wantIPTables:  true,
 		},
 		{
-			name: "mixed domains and wildcards forces DNS",
+			name: "mixed domains and wildcards forces DNS via dnsmasq",
 			policy: &network.Policy{
 				Domains:   []string{"api.anthropic.com"},
 				Wildcards: []string{"*.internal.company.com"},
@@ -45,12 +45,12 @@ func TestGenerateClaudeInitScript_DNSForcedWithAllowlist(t *testing.T) {
 			wantIPTables:  true,
 		},
 		{
-			name: "blocked policy does not force DNS",
+			name: "blocked policy forces DNS via dnsmasq",
 			policy: &network.Policy{
 				Blocked: true,
 			},
-			wantDNSForced: false,
-			wantIPTables:  true, // Still has iptables rules for blocking
+			wantDNSForced: true,
+			wantIPTables:  true,
 		},
 		{
 			name: "allow all does not force DNS",
@@ -78,11 +78,9 @@ func TestGenerateClaudeInitScript_DNSForcedWithAllowlist(t *testing.T) {
 				nil,
 			)
 
-			// Check for DNS forcing in the allowlist section (the specific pattern that fixes the DHCP/iptables mismatch)
-			// This must appear BEFORE the iptables rules when allowlist is active
-			// We look for the allowlist-specific DNS force, not the generic DHCP fallback
-			allowlistDNSMarker := "# Force DNS to use public resolvers (iptables will only allow these)"
-			dnsForceIndex := strings.Index(script, allowlistDNSMarker)
+			// Check for dnsmasq DNS forcing (replaces the old direct resolv.conf forcing)
+			dnsmasqMarker := "# Configure dnsmasq as logging DNS forwarder"
+			dnsForceIndex := strings.Index(script, dnsmasqMarker)
 			hasDNSForce := dnsForceIndex != -1
 
 			// Check for iptables OUTPUT policy
@@ -91,24 +89,23 @@ func TestGenerateClaudeInitScript_DNSForcedWithAllowlist(t *testing.T) {
 			hasIPTables := iptablesIndex != -1
 
 			if hasDNSForce != tt.wantDNSForced {
-				t.Errorf("DNS force = %v, want %v", hasDNSForce, tt.wantDNSForced)
+				t.Errorf("DNS force (dnsmasq) = %v, want %v", hasDNSForce, tt.wantDNSForced)
 			}
 
 			if hasIPTables != tt.wantIPTables {
 				t.Errorf("iptables rules = %v, want %v", hasIPTables, tt.wantIPTables)
 			}
 
-			// Critical check: DNS forcing must come BEFORE iptables rules
-			// This is the actual regression test for the DNS/iptables mismatch bug
+			// Critical check: dnsmasq setup must come BEFORE iptables rules
 			if tt.wantDNSForced && hasDNSForce && hasIPTables {
 				if dnsForceIndex > iptablesIndex {
-					t.Errorf("DNS forcing appears AFTER iptables rules - this will cause DNS to fail!\n"+
-						"DNS force at index %d, iptables at index %d", dnsForceIndex, iptablesIndex)
+					t.Errorf("dnsmasq setup appears AFTER iptables rules - DNS queries will be blocked!\n"+
+						"dnsmasq at index %d, iptables at index %d", dnsForceIndex, iptablesIndex)
 				}
 			}
 
-			// Verify DNS rules allow the forced resolvers
-			if tt.wantDNSForced {
+			// Verify iptables allows DNS to upstream resolvers (for domain/wildcard policies)
+			if tt.wantDNSForced && hasIPTables && !tt.policy.Blocked {
 				if !strings.Contains(script, "iptables -A OUTPUT -p udp -d 8.8.8.8 --dport 53 -j ACCEPT") {
 					t.Error("Missing iptables rule to allow DNS to 8.8.8.8")
 				}
@@ -297,6 +294,97 @@ func TestGenerateClaudeInitScript_NetworkLogRules(t *testing.T) {
 			}
 			if hasDmesgWatch != tt.wantDmesgWatch {
 				t.Errorf("dmesg watcher = %v, want %v", hasDmesgWatch, tt.wantDmesgWatch)
+			}
+		})
+	}
+}
+
+func TestGenerateClaudeInitScript_DnsmasqSetup(t *testing.T) {
+	tests := []struct {
+		name          string
+		policy        *network.Policy
+		wantDnsmasq   bool
+		wantLocalhost bool // resolv.conf points to 127.0.0.1
+	}{
+		{
+			name: "domain allowlist configures dnsmasq",
+			policy: &network.Policy{
+				Domains: []string{"api.anthropic.com", "github.com"},
+			},
+			wantDnsmasq:   true,
+			wantLocalhost: true,
+		},
+		{
+			name: "wildcard allowlist configures dnsmasq",
+			policy: &network.Policy{
+				Wildcards: []string{"*.example.com"},
+			},
+			wantDnsmasq:   true,
+			wantLocalhost: true,
+		},
+		{
+			name: "blocked policy configures dnsmasq",
+			policy: &network.Policy{
+				Blocked: true,
+			},
+			wantDnsmasq:   true,
+			wantLocalhost: true,
+		},
+		{
+			name: "allow all does NOT configure dnsmasq",
+			policy: &network.Policy{
+				AllowAll: true,
+			},
+			wantDnsmasq:   false,
+			wantLocalhost: false,
+		},
+		{
+			name:          "nil policy does NOT configure dnsmasq",
+			policy:        nil,
+			wantDnsmasq:   false,
+			wantLocalhost: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			script := GenerateClaudeInitScript(
+				[]session.VMMount{},
+				"/workspace",
+				tt.policy,
+				false,
+				nil,
+			)
+
+			hasDnsmasqConfig := strings.Contains(script, "cat > /etc/dnsmasq.conf")
+			hasDnsmasqStart := strings.Contains(script, "dnsmasq\n")
+			hasLocalhost := strings.Contains(script, "echo 'nameserver 127.0.0.1' > /etc/resolv.conf")
+			hasDnsmasqKill := strings.Contains(script, "killall dnsmasq")
+			hasLogQueries := strings.Contains(script, "log-queries")
+			hasDNSLogFacility := strings.Contains(script, "log-facility=/mnt/bootstrap/dns.log")
+
+			if hasDnsmasqConfig != tt.wantDnsmasq {
+				t.Errorf("dnsmasq config = %v, want %v", hasDnsmasqConfig, tt.wantDnsmasq)
+			}
+			if hasDnsmasqStart != tt.wantDnsmasq {
+				t.Errorf("dnsmasq start = %v, want %v", hasDnsmasqStart, tt.wantDnsmasq)
+			}
+			if hasLocalhost != tt.wantLocalhost {
+				t.Errorf("resolv.conf localhost = %v, want %v", hasLocalhost, tt.wantLocalhost)
+			}
+
+			// Cleanup handler should always have dnsmasq kill (it's unconditional in cleanup)
+			if !hasDnsmasqKill {
+				t.Error("Missing dnsmasq kill in cleanup handler")
+			}
+
+			if tt.wantDnsmasq {
+				if !hasLogQueries {
+					t.Error("Missing log-queries in dnsmasq config")
+				}
+				if !hasDNSLogFacility {
+					t.Error("Missing log-facility in dnsmasq config")
+				}
 			}
 		})
 	}

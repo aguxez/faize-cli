@@ -119,6 +119,8 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("  [ -n \"$RESIZE_WATCHER_PID\" ] && kill $RESIZE_WATCHER_PID 2>/dev/null || true\n")
 	sb.WriteString("  # Kill network log collector if running\n")
 	sb.WriteString("  [ -n \"$NETLOG_PID\" ] && kill $NETLOG_PID 2>/dev/null || true\n")
+	sb.WriteString("  # Kill dnsmasq if running\n")
+	sb.WriteString("  killall dnsmasq 2>/dev/null || true\n")
 	sb.WriteString("  # Kill child processes gracefully\n")
 	sb.WriteString("  kill -TERM $(jobs -p) 2>/dev/null || true\n")
 	sb.WriteString("  wait 2>/dev/null || true\n")
@@ -222,12 +224,33 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 	sb.WriteString("  fi\n")
 	sb.WriteString("fi\n\n")
 
-	// Ensure DNS is configured (only inject public DNS if DHCP didn't provide any)
-	sb.WriteString("# Ensure DNS configuration (only inject public DNS if DHCP didn't provide any)\n")
-	sb.WriteString("if ! grep -q nameserver /etc/resolv.conf 2>/dev/null; then\n")
-	sb.WriteString("  echo 'nameserver 8.8.8.8' > /etc/resolv.conf\n")
-	sb.WriteString("  echo 'nameserver 1.1.1.1' >> /etc/resolv.conf\n")
-	sb.WriteString("fi\n\n")
+	// DNS configuration — either dnsmasq local forwarder or direct public DNS
+	if policy != nil && !policy.AllowAll {
+		// Use dnsmasq as logging DNS forwarder for network-restricted sessions
+		sb.WriteString("# Configure dnsmasq as logging DNS forwarder\n")
+		sb.WriteString("cat > /etc/dnsmasq.conf << 'DNSMASQ_EOF'\n")
+		sb.WriteString("listen-address=127.0.0.1\n")
+		sb.WriteString("port=53\n")
+		sb.WriteString("no-resolv\n")
+		sb.WriteString("server=8.8.8.8\n")
+		sb.WriteString("server=1.1.1.1\n")
+		sb.WriteString("log-queries\n")
+		sb.WriteString("log-facility=/mnt/bootstrap/dns.log\n")
+		sb.WriteString("cache-size=200\n")
+		sb.WriteString("pid-file=\n")
+		sb.WriteString("DNSMASQ_EOF\n\n")
+		sb.WriteString("# Start dnsmasq (daemonizes by default)\n")
+		sb.WriteString("dnsmasq\n\n")
+		sb.WriteString("# Point DNS at local dnsmasq\n")
+		sb.WriteString("echo 'nameserver 127.0.0.1' > /etc/resolv.conf\n\n")
+	} else {
+		// No network restrictions — use public DNS directly if DHCP didn't set any
+		sb.WriteString("# Ensure DNS configuration (only inject public DNS if DHCP didn't provide any)\n")
+		sb.WriteString("if ! grep -q nameserver /etc/resolv.conf 2>/dev/null; then\n")
+		sb.WriteString("  echo 'nameserver 8.8.8.8' > /etc/resolv.conf\n")
+		sb.WriteString("  echo 'nameserver 1.1.1.1' >> /etc/resolv.conf\n")
+		sb.WriteString("fi\n\n")
+	}
 
 	// Test connectivity (with DNS stabilization delay and retries)
 	sb.WriteString("# Brief wait for network/DNS to stabilize after DHCP\n")
@@ -259,11 +282,9 @@ func GenerateClaudeInitScript(mounts []session.VMMount, projectDir string, polic
 			sb.WriteString("# === Network Policy: Domain Allowlist ===\n")
 			sb.WriteString("[ \"$FAIZE_DEBUG\" = \"1\" ] && echo 'Applying network policy: domain allowlist'\n\n")
 
-			// Force DNS to use public resolvers that we allow through iptables
-			// This is necessary because DHCP may have set a different DNS server
-			sb.WriteString("# Force DNS to use public resolvers (iptables will only allow these)\n")
-			sb.WriteString("echo 'nameserver 8.8.8.8' > /etc/resolv.conf\n")
-			sb.WriteString("echo 'nameserver 1.1.1.1' >> /etc/resolv.conf\n\n")
+			// DNS already pointing to localhost dnsmasq (configured above)
+			// dnsmasq forwards to 8.8.8.8/1.1.1.1 which iptables allows
+			sb.WriteString("# DNS goes through local dnsmasq → 8.8.8.8/1.1.1.1 (allowed by iptables)\n\n")
 
 			sb.WriteString("# Default: drop all outbound except established connections\n")
 			sb.WriteString("iptables -P OUTPUT DROP\n")

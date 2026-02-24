@@ -159,11 +159,12 @@ type MountChanges struct {
 // NetworkEvent represents a parsed network event from guest-side iptables LOG rules.
 type NetworkEvent struct {
 	Timestamp string `json:"timestamp"`
-	Action    string `json:"action"`           // "CONN" or "DENY"
-	Proto     string `json:"proto"`            // "TCP", "UDP"
-	DstIP     string `json:"dst_ip"`
-	DstPort   int    `json:"dst_port"`
+	Action    string `json:"action"`          // "CONN", "DENY", or "DNS"
+	Proto     string `json:"proto,omitempty"` // "TCP", "UDP"
+	DstIP     string `json:"dst_ip,omitempty"`
+	DstPort   int    `json:"dst_port,omitempty"`
 	SrcPort   int    `json:"src_port,omitempty"`
+	Domain    string `json:"domain,omitempty"` // from dnsmasq query log
 }
 
 // SessionChangeset is the complete changeset for a session.
@@ -301,6 +302,87 @@ func ParseNetworkLog(path string) ([]NetworkEvent, error) {
 		return []NetworkEvent{}, nil
 	}
 	return events, nil
+}
+
+// dnsQueryRe matches dnsmasq query lines: "Feb 24 12:00:01 dnsmasq[42]: query[A] api.anthropic.com from 127.0.0.1"
+var dnsQueryRe = regexp.MustCompile(`^(\w+ \d+ [\d:]+) dnsmasq\[\d+\]: query\[\w+\] (\S+) from`)
+
+// dnsReplyRe matches dnsmasq reply lines: "Feb 24 12:00:01 dnsmasq[42]: reply api.anthropic.com is 104.18.32.47"
+var dnsReplyRe = regexp.MustCompile(`^(\w+ \d+ [\d:]+) dnsmasq\[\d+\]: reply (\S+) is (\S+)`)
+
+// ParseDNSLog reads a dnsmasq query log and returns DNS events and an IP→domain mapping.
+func ParseDNSLog(path string) (events []NetworkEvent, ipToDomain map[string]string, err error) {
+	ipToDomain = make(map[string]string)
+
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []NetworkEvent{}, ipToDomain, nil
+		}
+		return nil, nil, err
+	}
+	defer func() { _ = f.Close() }()
+
+	seen := make(map[string]bool)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Parse query lines
+		if qm := dnsQueryRe.FindStringSubmatch(line); qm != nil {
+			domain := qm[2]
+			if !seen[domain] {
+				seen[domain] = true
+				events = append(events, NetworkEvent{
+					Timestamp: qm[1],
+					Action:    "DNS",
+					Domain:    domain,
+				})
+			}
+			continue
+		}
+
+		// Parse reply lines → build IP→domain map
+		if rm := dnsReplyRe.FindStringSubmatch(line); rm != nil {
+			domain := rm[2]
+			ip := rm[3]
+			// Only map IPv4 addresses (skip CNAME and other reply types)
+			if !strings.Contains(ip, ":") && ip != "<CNAME>" {
+				ipToDomain[ip] = domain
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	if events == nil {
+		events = []NetworkEvent{}
+	}
+	return events, ipToDomain, nil
+}
+
+// CollectNetworkEvents reads both network.log (iptables) and dns.log (dnsmasq),
+// then annotates iptables connection events with domain names from DNS replies.
+func CollectNetworkEvents(bootstrapDir string) []NetworkEvent {
+	// Parse DNS log → get DNS events + IP→domain map
+	dnsEvents, ipToDomain, _ := ParseDNSLog(filepath.Join(bootstrapDir, "dns.log"))
+
+	// Parse iptables network log → get connection/deny events
+	netEvents, _ := ParseNetworkLog(filepath.Join(bootstrapDir, "network.log"))
+
+	// Annotate connection events with domain names from DNS replies
+	for i := range netEvents {
+		if domain, ok := ipToDomain[netEvents[i].DstIP]; ok {
+			netEvents[i].Domain = domain
+		}
+	}
+
+	// Return DNS events followed by annotated connection events
+	var all []NetworkEvent
+	all = append(all, dnsEvents...)
+	all = append(all, netEvents...)
+	return all
 }
 
 // defaultIgnorePrefixes are path prefixes for internal state that should not

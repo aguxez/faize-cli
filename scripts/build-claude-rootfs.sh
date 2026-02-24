@@ -38,7 +38,7 @@ if [ -n "$EXTRA_DEPS" ]; then
 fi
 docker run --rm -v "$WORK_DIR/rootfs:/out" alpine:latest sh -c "
     # Install packages
-    BASE_PKGS=\"bash curl ca-certificates git build-base python3 coreutils nodejs npm util-linux iptables ip6tables\"
+    BASE_PKGS=\"bash curl ca-certificates git build-base python3 coreutils nodejs npm util-linux iptables ip6tables dnsmasq\"
     apk add --no-cache \$BASE_PKGS $EXTRA_DEPS >/dev/null 2>&1
 
     # Copy the entire root filesystem structure
