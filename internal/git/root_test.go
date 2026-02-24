@@ -32,7 +32,8 @@ func initGitRepo(t *testing.T, dir string) {
 }
 
 func TestFindRoot_ReturnsRepoRoot(t *testing.T) {
-	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	initGitRepo(t, dir)
 
 	got := FindRoot(dir)
@@ -40,11 +41,12 @@ func TestFindRoot_ReturnsRepoRoot(t *testing.T) {
 }
 
 func TestFindRoot_Subdir_ReturnsRepoRoot(t *testing.T) {
-	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	initGitRepo(t, dir)
 
 	subdir := filepath.Join(dir, "some", "nested", "subdir")
-	err := os.MkdirAll(subdir, 0o755)
+	err = os.MkdirAll(subdir, 0o755)
 	require.NoError(t, err)
 
 	got := FindRoot(subdir)

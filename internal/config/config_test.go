@@ -12,7 +12,11 @@ import (
 )
 
 func TestLoadDefaults(t *testing.T) {
-	// Load config without a config file present
+	// Point HOME at an empty temp dir so no real config file is found.
+	t.Setenv("HOME", t.TempDir())
+	homedir.DisableCache = true
+	t.Cleanup(func() { homedir.DisableCache = false })
+
 	cfg, err := Load()
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
